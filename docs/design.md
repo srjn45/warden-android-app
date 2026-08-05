@@ -72,6 +72,56 @@ Because tmux holds the session **server-side**, the app can drop the socket when
 backgrounded and re-attach later with scrollback intact — no need to fight
 Android Doze with a persistent connection.
 
+### 2.2 WS attach client contract (P1 reference)
+
+Verified against `internal/daemon/attach.go` + `sse.go` (confirmed by the daemon
+owner, 2026-08-06). Endpoint: `GET /api/v1/sessions/{id}/attach`. Capture the
+exact behaviour here so P1 wiring doesn't need to re-read the daemon source.
+
+- **Handshake / auth.** No WebSocket subprotocol — `websocket.Accept(w, r, nil)`;
+  do **not** send `Sec-WebSocket-Protocol`. Auth is the `?token=` query param
+  only (no header), same as SSE. OkHttp sends no `Origin`, so the server's
+  cross-origin guard passes for a native client.
+- **Framing.**
+  - server → client: **always binary** = raw xterm-256color PTY bytes.
+  - client → server, **binary** = keystrokes written straight to the PTY.
+  - client → server, **text** = resize JSON `{"cols":N,"rows":M}` only. Any text
+    that isn't valid resize JSON with non-zero dims is **silently ignored** (no
+    reply) — never use text frames for anything else.
+- **Frame sizes.** Server read limit is **1 MiB** per client binary frame — a
+  larger single frame kills the connection, so **chunk large pastes to <1 MiB**.
+  Server → client frames are ≤32 KiB (PTY read buffer); set OkHttp's read limit
+  well above that.
+- **Resize.** Not required before the stream starts (tmux attaches at its current
+  size and streams immediately), **but** the server sets tmux `window-size
+  latest`, so the most-recently-active client drives the pane size. **Send one
+  resize text frame right after connect** (once the terminal view has measured
+  cols/rows), and debounce-send on rotation / keyboard show — otherwise the pane
+  inherits whatever the last attach (web UI / another device) set. Resize →
+  `pty.Setsize` → `SIGWINCH`.
+- **Keepalive.** The bridge sends no app-level pings and no WS ping frames
+  (coder/websocket only auto-PONGs); an idle agent is pure silence. Enable
+  OkHttp `pingInterval` ~20–30 s to hold NAT / Tailscale / Cloudflare paths open
+  and detect half-open sockets — the WS analogue of the SSE `readTimeout=0` fix.
+  The server PONGs automatically.
+- **Close codes.** Agent attach (`signalSessionEnd=false`) never sends a special
+  close code and uses `CloseNow()` on the normal detach path, so an **ordinary
+  detach looks like an abnormal 1006-style close, not a clean 1000**. Treat *any*
+  close as "detached, session still alive server-side" → offer reconnect; do
+  **not** surface a non-1000 close as an error. Close code `4001`
+  (`wsStatusCockpitEnded`) comes **only** from `/cockpit/attach` when the TUI is
+  quit from inside — irrelevant until the raw-terminal/cockpit screen (~P3).
+- **Reconnect.** Closing the socket detaches only this client; the tmux session
+  keeps running with scrollback and repaints on re-attach. Reconnecting hits the
+  **same live pane**, so the app can drop the socket on background and re-attach
+  on resume without persisting the terminal buffer itself.
+
+Note on the **SSE** stream (`sse.go`, same review): the server already dedupes
+snapshots (`bytes.Equal`, emits only on real change) and always sends the initial
+snapshot immediately on connect; `data:` frames are unnamed (no `event:`/`id:`),
+so okhttp-sse delivers `type=null, id=null`. The client-side dedupe is
+belt-and-suspenders and stays.
+
 ---
 
 ## 3. Auth & networking model (from code, not the old spec)
