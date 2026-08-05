@@ -5,8 +5,14 @@ fleet of coding agents from a phone. The warden web UI is awkward on mobile; thi
 app is a native, terminal-first client that talks directly to the warden daemon's
 remote API (LAN, Tailscale, or Cloudflare tunnel).
 
-> **Status: planning.** No app code yet — this repo currently holds the design &
-> architecture spec. See [`docs/design.md`](docs/design.md).
+> **Status: P0 built.** Connect screen (host + bearer token, encrypted at rest)
+> and the live SSE-driven agent list are implemented and compile to a debug APK;
+> the data layer is verified end-to-end against a running daemon. Terminal (P1)
+> is next. See [`docs/design.md`](docs/design.md) for the full spec and the P0
+> implementation notes (§8.1).
+>
+> **Build:** `./gradlew :app:assembleDebug` (Android SDK with the `android-36`
+> platform + JDK 17 required).
 
 ## MVP scope
 

@@ -4,7 +4,8 @@
 /local.properties
 /.idea/
 .DS_Store
-/build/
+# Match build output at any module depth (root and app/), not just the root.
+build/
 /captures/
 .externalNativeBuild/
 .cxx/

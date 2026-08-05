@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The warden daemon serves plain HTTP (no TLS); transport encryption is expected
+  to come from Tailscale or a Cloudflare tunnel (see docs/design.md §3, §6).
+  A user connecting to a Tailscale/LAN IP therefore needs cleartext HTTP allowed.
+
+  We permit cleartext broadly because the host is user-entered at runtime and not
+  known at build time. https:// hosts (e.g. *.ts.net or a tunnel domain) continue
+  to use the platform trust store as normal.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

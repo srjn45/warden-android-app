@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Base theme; Compose drives the actual colors. Uses a Material3 DayNight
+         parent so the system status bar / splash look right before Compose loads. -->
+    <style name="Theme.WardenApp" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

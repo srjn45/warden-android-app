@@ -201,14 +201,48 @@ None are required for MVP, but worth noting:
 
 ## 8. Suggested build phases
 
-- **P0 — Connect + list.** Secure host/token entry, `/healthz` + `/sessions`,
-  SSE-driven list. Proves auth + transport end to end.
+- **P0 — Connect + list.** ✅ **Done.** Secure host/token entry, `/healthz` +
+  `/sessions`, SSE-driven list. Proves auth + transport end to end.
 - **P1 — Terminal.** Termux view + WS binary bridge + resize + key bar against
   `…/attach`. The riskiest/most valuable piece; do it early.
 - **P2 — Create / delete.** Spawn sheet (backend/dir/role/prompt, `428` handling)
   + terminate/delete.
 - **P3 — Raw host terminal** via `…/cockpit/attach`, and quick-prompt `/input`.
 - **P4 — Polish.** Multiple saved hosts, QR pairing, reconnect/backoff.
+
+### 8.1 P0 implementation notes (as built)
+
+Concrete choices made during the P0 build; recorded here so later phases stay
+consistent.
+
+- **Toolchain:** single Gradle module `:app` (the design's split into
+  `:app`/`:data`/`:terminal` is deferred until the terminal lands in P1). AGP
+  8.6.1, Gradle 8.9, Kotlin 2.0.21, Compose BOM 2024.09. `minSdk 26`,
+  `targetSdk 34`, `compileSdk 36` (only the `android-36` platform is installed
+  on the build host; `android.suppressUnsupportedCompileSdk=36` silences the
+  AGP warning).
+- **Cleartext policy:** `network_security_config` permits cleartext broadly via
+  `base-config` rather than a per-domain allowlist, because the host is entered
+  at runtime and unknown at build time (design §6). `https://` hosts still use
+  the system trust store. If we later want to tighten this, the app would need
+  to rewrite the config per saved host — deferred as not worth it for MVP.
+- **Storage:** host + token persist as a single encrypted JSON blob in a
+  Keystore-backed `EncryptedSharedPreferences` file, modelled as a list of
+  connections + an active label (multi-host-ready, though P0 UI drives one).
+- **Networking:** `WardenClient` wraps Retrofit (kotlinx.serialization
+  converter) for REST and okhttp-sse for the stream. Bearer token is a header
+  interceptor on REST and a `?token=` query param on SSE. SSE read-timeout is
+  disabled (0) so the ~25 s heartbeat doesn't kill an idle-but-healthy stream;
+  identical consecutive `data:` frames are deduped before hitting the UI.
+- **List behaviour:** rows sort attention-first (`waiting_for_input`, `errored`,
+  `rate_limited`, then `working`…) then by `updated_at`. Pull-to-refresh falls
+  back to `GET /sessions`; a stream indicator (live/connecting/offline) with a
+  manual reconnect covers the disconnected state.
+- **Verification:** JVM unit tests cover DTO decoding (with unknown daemon
+  fields) and URL normalization; a gated live-daemon integration test
+  (`LiveDaemonIntegrationTest`, env-var-gated, read-only) exercises the real
+  REST + SSE path against a running daemon. No on-device render yet — no
+  emulator/AVD was available on the build host.
 
 ---
 
