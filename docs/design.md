@@ -284,8 +284,16 @@ consistent.
   interceptor on REST and a `?token=` query param on SSE. SSE read-timeout is
   disabled (0) so the ~25 s heartbeat doesn't kill an idle-but-healthy stream;
   identical consecutive `data:` frames are deduped before hitting the UI.
-- **List behaviour:** rows sort attention-first (`waiting_for_input`, `errored`,
-  `rate_limited`, then `working`…) then by `updated_at`. Pull-to-refresh falls
+- **List behaviour:** rows keep the daemon's own order — we deliberately do
+  **not** sort. (An earlier attention-first + `updated_at` sort made rows jump on
+  every agent action, which is disorienting on a small screen.) Organisation is
+  opt-in via **Group by**, mirroring the web cockpit's dimensions
+  (`web/src/lib/group.ts`): Directory / Type / Status / Tag / Agent(`backend`),
+  plus a **None** default (flat list). Grouping preserves server order too —
+  groups appear first-seen, agents keep their incoming order within a group;
+  `tag` fans a multi-tagged agent into each of its groups. Group headers are
+  collapsible and the chosen mode persists (plain `SharedPreferences`, the mobile
+  analogue of the web's `localStorage['warden.grouping']`). Pull-to-refresh falls
   back to `GET /sessions`; a stream indicator (live/connecting/offline) with a
   manual reconnect covers the disconnected state.
 - **Verification:** JVM unit tests cover DTO decoding (with unknown daemon

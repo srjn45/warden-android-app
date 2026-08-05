@@ -3,6 +3,7 @@ package com.warden.android.ui.agents
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.warden.android.data.SettingsStore
 import com.warden.android.data.WardenRepository
 import com.warden.android.data.model.Session
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,12 +21,21 @@ data class AgentListUiState(
     val stream: StreamStatus = StreamStatus.Connecting,
     val refreshing: Boolean = false,
     val hostLabel: String = "",
+    val groupMode: GroupMode = GroupMode.None,
     val error: String? = null,
 )
 
-class AgentListViewModel(private val repo: WardenRepository) : ViewModel() {
+class AgentListViewModel(
+    private val repo: WardenRepository,
+    private val settings: SettingsStore,
+) : ViewModel() {
 
-    private val _state = MutableStateFlow(AgentListUiState(hostLabel = repo.active?.baseUrl ?: ""))
+    private val _state = MutableStateFlow(
+        AgentListUiState(
+            hostLabel = repo.active?.baseUrl ?: "",
+            groupMode = GroupMode.fromId(settings.groupModeId),
+        ),
+    )
     val state: StateFlow<AgentListUiState> = _state.asStateFlow()
 
     init {
@@ -38,6 +48,10 @@ class AgentListViewModel(private val repo: WardenRepository) : ViewModel() {
      * cheap to re-establish — design.md §2.1, §6). No aggressive backoff needed
      * for P0; a fresh collect is triggered on the next lifecycle resume via the
      * ViewModel staying alive, and pull-to-refresh gives a manual retry.
+     *
+     * Agents are stored in the daemon's own order — we deliberately do NOT sort.
+     * Ordering by status/updated_at made rows jump on every agent action, which
+     * is disorienting on mobile; grouping (below) is the opt-in way to organise.
      */
     private fun observeStream() {
         viewModelScope.launch {
@@ -50,7 +64,7 @@ class AgentListViewModel(private val repo: WardenRepository) : ViewModel() {
                 .collect { snapshot ->
                     _state.update {
                         it.copy(
-                            agents = snapshot.sessions.sortedWith(agentOrder),
+                            agents = snapshot.sessions,
                             stream = StreamStatus.Live,
                             error = null,
                         )
@@ -66,7 +80,7 @@ class AgentListViewModel(private val repo: WardenRepository) : ViewModel() {
             repo.listSessions()
                 .onSuccess { list ->
                     _state.update {
-                        it.copy(agents = list.sortedWith(agentOrder), refreshing = false, error = null)
+                        it.copy(agents = list, refreshing = false, error = null)
                     }
                 }
                 .onFailure { e ->
@@ -75,32 +89,24 @@ class AgentListViewModel(private val repo: WardenRepository) : ViewModel() {
         }
     }
 
+    /** Change the group-by dimension and persist it (mirrors the web preference). */
+    fun setGroupMode(mode: GroupMode) {
+        settings.groupModeId = mode.id
+        _state.update { it.copy(groupMode = mode) }
+    }
+
     /** Manual reconnect for the Disconnected state. */
     fun reconnect() {
         _state.update { it.copy(stream = StreamStatus.Connecting, error = null) }
         observeStream()
     }
 
-    class Factory(private val repo: WardenRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repo: WardenRepository,
+        private val settings: SettingsStore,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            AgentListViewModel(repo) as T
-    }
-
-    private companion object {
-        // Agents needing attention float to the top; then most-recently-updated.
-        val statusRank = mapOf(
-            "waiting_for_input" to 0,
-            "errored" to 1,
-            "rate_limited" to 2,
-            "working" to 3,
-            "spawning" to 4,
-            "idle" to 5,
-            "orphaned" to 6,
-            "done" to 7,
-        )
-        val agentOrder: Comparator<Session> =
-            compareBy<Session> { statusRank[it.status] ?: 99 }
-                .thenByDescending { it.updatedAt }
+            AgentListViewModel(repo, settings) as T
     }
 }

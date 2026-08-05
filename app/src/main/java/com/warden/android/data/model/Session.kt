@@ -42,6 +42,7 @@ data class Session(
     @SerialName("pipeline_id") val pipelineId: String = "",
     @SerialName("job_id") val jobId: String = "",
     val model: String = "",
+    val backend: String = "",
     @SerialName("context_tokens") val contextTokens: Int = 0,
     @SerialName("context_state") val contextState: String = "",
 ) {

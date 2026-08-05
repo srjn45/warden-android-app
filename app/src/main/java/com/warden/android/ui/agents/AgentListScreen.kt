@@ -1,5 +1,8 @@
 package com.warden.android.ui.agents
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,19 +15,26 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Circle
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,33 +71,85 @@ fun AgentListScreen(
             )
         },
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.refreshing,
-            onRefresh = viewModel::refresh,
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            when {
-                state.agents.isEmpty() && state.stream == StreamStatus.Disconnected ->
-                    CenteredMessage(
-                        title = "Disconnected",
-                        subtitle = state.error ?: "Lost the live stream.",
-                        actionLabel = "Reconnect",
-                        onAction = viewModel::reconnect,
+            // Grouping control is only meaningful once agents exist.
+            if (state.agents.isNotEmpty()) {
+                GroupByBar(selected = state.groupMode, onSelect = viewModel::setGroupMode)
+            }
+
+            PullToRefreshBox(
+                isRefreshing = state.refreshing,
+                onRefresh = viewModel::refresh,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                when {
+                    state.agents.isEmpty() && state.stream == StreamStatus.Disconnected ->
+                        CenteredMessage(
+                            title = "Disconnected",
+                            subtitle = state.error ?: "Lost the live stream.",
+                            actionLabel = "Reconnect",
+                            onAction = viewModel::reconnect,
+                        )
+
+                    state.agents.isEmpty() && state.stream == StreamStatus.Connecting ->
+                        CenteredMessage(title = "Connecting…", subtitle = "Subscribing to the live stream.")
+
+                    state.agents.isEmpty() ->
+                        CenteredMessage(
+                            title = "No agents",
+                            subtitle = "This fleet has no live agents. Pull to refresh.",
+                        )
+
+                    else -> AgentList(
+                        agents = state.agents,
+                        groupMode = state.groupMode,
+                        onAgentClick = onAgentClick,
                     )
+                }
+            }
+        }
+    }
+}
 
-                state.agents.isEmpty() && state.stream == StreamStatus.Connecting ->
-                    CenteredMessage(title = "Connecting…", subtitle = "Subscribing to the live stream.")
+/**
+ * Renders the agents flat (GroupMode.None) or under collapsible group headers.
+ * Order is the daemon's own — nothing here re-sorts. In tag mode an agent can
+ * appear under several groups, so item keys are namespaced by the group key.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AgentList(
+    agents: List<Session>,
+    groupMode: GroupMode,
+    onAgentClick: (Session) -> Unit,
+) {
+    val groups = remember(agents, groupMode) { groupSessions(agents, groupMode) }
+    // Collapsed group keys; reset whenever the grouping dimension changes.
+    val collapsed = remember(groupMode) { mutableStateMapOf<String, Boolean>() }
 
-                state.agents.isEmpty() ->
-                    CenteredMessage(
-                        title = "No agents",
-                        subtitle = "This fleet has no live agents. Pull to refresh.",
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        if (groupMode == GroupMode.None) {
+            items(agents, key = { it.id }) { agent ->
+                AgentRow(agent, onClick = { onAgentClick(agent) })
+                HorizontalDivider()
+            }
+        } else {
+            groups.forEach { group ->
+                val isCollapsed = collapsed[group.key] == true
+                stickyHeader(key = "header:${group.key}") {
+                    GroupHeader(
+                        label = group.label,
+                        count = group.sessions.size,
+                        collapsed = isCollapsed,
+                        onToggle = { collapsed[group.key] = !isCollapsed },
                     )
-
-                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.agents, key = { it.id }) { agent ->
+                }
+                if (!isCollapsed) {
+                    items(group.sessions, key = { "${group.key}:${it.id}" }) { agent ->
                         AgentRow(agent, onClick = { onAgentClick(agent) })
                         HorizontalDivider()
                     }
@@ -98,10 +160,74 @@ fun AgentListScreen(
 }
 
 @Composable
+private fun GroupByBar(selected: GroupMode, onSelect: (GroupMode) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Group by",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        GroupMode.entries.forEach { mode ->
+            FilterChip(
+                selected = mode == selected,
+                onClick = { onSelect(mode) },
+                label = { Text(mode.label) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupHeader(
+    label: String,
+    count: Int,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (collapsed) Icons.Filled.ExpandMore else Icons.Filled.ExpandLess,
+                contentDescription = if (collapsed) "Expand" else "Collapse",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.height(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = label.ifBlank { "—" },
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = count.toString(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun AgentRow(agent: Session, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

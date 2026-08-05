@@ -2,6 +2,7 @@ package com.warden.android
 
 import android.app.Application
 import com.warden.android.data.ConnectionStore
+import com.warden.android.data.SettingsStore
 import com.warden.android.data.WardenRepository
 
 /**
@@ -14,4 +15,6 @@ class WardenApplication : Application() {
     val repository: WardenRepository by lazy {
         WardenRepository(ConnectionStore(this))
     }
+
+    val settings: SettingsStore by lazy { SettingsStore(this) }
 }

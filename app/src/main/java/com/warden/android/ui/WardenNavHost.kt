@@ -1,10 +1,12 @@
 package com.warden.android.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.warden.android.WardenApplication
 import com.warden.android.data.WardenRepository
 import com.warden.android.ui.agents.AgentListScreen
 import com.warden.android.ui.agents.AgentListViewModel
@@ -35,11 +37,12 @@ fun WardenNavHost(repository: WardenRepository) {
             )
         }
         composable(Routes.AGENTS) {
+            val settings = (LocalContext.current.applicationContext as WardenApplication).settings
             // Key the ViewModel to the active base URL so switching hosts later
             // gives a fresh stream rather than a stale one.
             val vm: AgentListViewModel = viewModel(
                 key = "agents:${repository.active?.baseUrl}",
-                factory = AgentListViewModel.Factory(repository),
+                factory = AgentListViewModel.Factory(repository, settings),
             )
             AgentListScreen(viewModel = vm)
         }
