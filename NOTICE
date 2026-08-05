@@ -1,0 +1,25 @@
+warden-android-app
+Copyright 2026 warden-android-app authors
+
+This product is licensed under the Apache License, Version 2.0 (see the
+LICENSE file). It is a companion Android client for warden
+(https://github.com/srjn45/warden), which is likewise licensed under the
+Apache License, Version 2.0.
+
+---------------------------------------------------------------------------
+Third-party components
+---------------------------------------------------------------------------
+
+This application is designed to incorporate the following third-party
+software. Each is distributed under its own license; the notices below are
+provided for attribution.
+
+Termux terminal-view and terminal-emulator
+  https://github.com/termux/termux-app
+  Copyright Termux authors
+  Licensed under the Apache License, Version 2.0.
+
+Additional third-party dependencies (e.g. OkHttp, Retrofit, kotlinx.serialization,
+Jetpack Compose, CameraX, ML Kit) are pulled in via the build system; their
+respective licenses and attributions apply. This NOTICE file will be updated as
+those dependencies are added to the build.
