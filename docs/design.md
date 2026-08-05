@@ -253,8 +253,9 @@ None are required for MVP, but worth noting:
 
 - **P0 — Connect + list.** ✅ **Done.** Secure host/token entry, `/healthz` +
   `/sessions`, SSE-driven list. Proves auth + transport end to end.
-- **P1 — Terminal.** Termux view + WS binary bridge + resize + key bar against
-  `…/attach`. The riskiest/most valuable piece; do it early.
+- **P1 — Terminal.** ✅ **Built** (data path verified; on-device render pending an
+  emulator). Termux emulator + WS binary bridge + resize + key bar against
+  `…/attach`. See §8.2 for the as-built architecture.
 - **P2 — Create / delete.** Spawn sheet (backend/dir/role/prompt, `428` handling)
   + terminate/delete.
 - **P3 — Raw host terminal** via `…/cockpit/attach`, and quick-prompt `/input`.
@@ -301,6 +302,46 @@ consistent.
   (`LiveDaemonIntegrationTest`, env-var-gated, read-only) exercises the real
   REST + SSE path against a running daemon. No on-device render yet — no
   emulator/AVD was available on the build host.
+
+### 8.2 P1 implementation notes (as built)
+
+The terminal, built against the §2.2 contract. Key decision: **use Termux's
+`terminal-emulator` + `terminal-view` as libraries but drive them from the
+remote stream — no fork, no vendoring.**
+
+- **Dependencies:** the Termux widgets aren't on Maven Central, so they come from
+  JitPack (`com.termux.termux-app:terminal-view` + `:terminal-emulator`,
+  **v0.118.0** — 0.118.1's AAR was never published). The JitPack repo is scoped
+  by group in `settings.gradle.kts` so nothing else resolves through it. Both are
+  Apache-2.0 (already credited in `NOTICE`).
+- **Why not Termux's `TerminalView` as-is:** its `TerminalSession` is `final` and,
+  on attach, spawns a **local** JNI subprocess (`updateSize → initializeEmulator →
+  JNI.createSubprocess`). Useless for a remote PTY. But `TerminalEmulator` is a
+  pure VT/xterm state machine with no process coupling, and `TerminalRenderer` is
+  a pure canvas renderer that only reads the emulator. So we reuse those two and
+  supply our own thin view + session.
+- **`RemoteTerminalSession`** *is* the emulator's `TerminalOutput` (bytes the
+  emulator emits → WS) and its `TerminalSessionClient` (only cursor-style + log
+  hooks are ever called). Server→client bytes are fed in via `emulator.append()`.
+- **`RemoteTerminalView`** (custom `View`) renders with Termux's `TerminalRenderer`
+  and forwards input: hardware + soft keyboard (IME via `TYPE_NULL` + a
+  `commitText` fallback), Ctrl/Alt semantics, special keys via `KeyHandler`,
+  resize on layout, and touch scrollback. Text selection/mouse-tracking are
+  deferred. Input goes straight to the socket; the screen repaints from the
+  server's echo (the normal remote round-trip).
+- **`WsTerminalTransport`** (OkHttp binary WS): binary in/out, resize as a text
+  frame, pastes chunked under the 1 MiB limit, keepalive via the shared client's
+  `pingInterval`. Per §2.2 *any* close after opening is a benign detach (offer
+  reconnect, not an error); a failure before opening is a real error. The initial
+  resize is (re)sent on every `Attached`.
+- **Threading:** the emulator is single-threaded. `TerminalController` hops every
+  inbound WS frame from OkHttp's reader thread to the main looper before touching
+  the session, and owns the transport↔session↔view wiring + connection state.
+- **Verification:** framing helpers are unit-tested; the live integration test
+  gained a **read-only** WS check (`wsAttachReachesAttached`) that opens the real
+  socket to a live session and asserts it reaches `Attached` — it sends no input
+  and no resize, so attached agents are undisturbed. On-device glyph rendering is
+  still unverified (no emulator/AVD on the host).
 
 ---
 

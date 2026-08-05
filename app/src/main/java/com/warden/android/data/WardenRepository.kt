@@ -2,6 +2,8 @@ package com.warden.android.data
 
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.SessionList
+import com.warden.android.data.terminal.TerminalListener
+import com.warden.android.data.terminal.TerminalTransport
 import kotlinx.coroutines.flow.Flow
 import java.io.IOException
 
@@ -99,6 +101,12 @@ class WardenRepository(val store: ConnectionStore) {
     fun sessionStream(): Flow<SessionList> {
         val c = client ?: error("no active connection")
         return c.sessionStream()
+    }
+
+    /** Opens a terminal attach socket for [sessionId] on the active connection. */
+    fun openTerminal(sessionId: String, listener: TerminalListener): TerminalTransport {
+        val c = client ?: error("no active connection")
+        return c.openTerminal(sessionId, listener)
     }
 
     class HttpStatusException(val code: Int) : Exception("HTTP $code")

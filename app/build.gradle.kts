@@ -73,6 +73,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.security.crypto)
 
+    implementation(libs.termux.terminal.view)
+    implementation(libs.termux.terminal.emulator)
+
     testImplementation(libs.junit)
     testImplementation(libs.okhttp)
     testImplementation(libs.kotlinx.serialization.json)

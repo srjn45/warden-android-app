@@ -12,6 +12,7 @@ kotlinxSerialization = "1.7.3"
 kotlinxCoroutines = "1.8.1"
 retrofitKotlinxConverter = "1.0.0"
 securityCrypto = "1.1.0-alpha06"
+termux = "0.118.0"
 junit = "4.13.2"
 androidxJunit = "1.2.1"
 espresso = "3.6.1"
@@ -39,6 +40,11 @@ retrofit-kotlinx-serialization = { group = "com.jakewharton.retrofit", name = "r
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-core = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-core", version.ref = "kotlinxCoroutines" }
 androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
+
+# Termux terminal widget (Apache-2.0), consumed via JitPack. terminal-view pulls
+# terminal-emulator transitively; both are declared for clarity. See NOTICE.
+termux-terminal-view = { group = "com.termux.termux-app", name = "terminal-view", version.ref = "termux" }
+termux-terminal-emulator = { group = "com.termux.termux-app", name = "terminal-emulator", version.ref = "termux" }
 
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidxJunit" }

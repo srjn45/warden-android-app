@@ -2,6 +2,9 @@ package com.warden.android.data
 
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import com.warden.android.data.model.SessionList
+import com.warden.android.data.terminal.TerminalListener
+import com.warden.android.data.terminal.TerminalTransport
+import com.warden.android.data.terminal.WsTerminalTransport
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -88,6 +91,17 @@ class WardenClient(private val connection: Connection) {
 
         val source = EventSources.createFactory(httpClient).newEventSource(request, listener)
         awaitClose { source.cancel() }
+    }
+
+    /**
+     * Opens a terminal attach socket for [sessionId]. Reuses the shared client so
+     * WS keepalive rides the same `pingInterval` as SSE. Auth is the `?token=`
+     * query param (WS upgrades can't carry the bearer header — design.md §3).
+     */
+    fun openTerminal(sessionId: String, listener: TerminalListener): TerminalTransport {
+        val url = connection.baseUrl.trimEnd('/') +
+            "/api/v1/sessions/" + sessionId + "/attach?token=" + connection.token
+        return WsTerminalTransport(httpClient, url, listener)
     }
 
     /** Thrown when the SSE stream fails; [code] is the HTTP status if any. */
