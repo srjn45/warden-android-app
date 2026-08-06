@@ -14,8 +14,10 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import com.termux.terminal.KeyHandler
+import com.termux.terminal.TerminalEmulator
 import com.termux.view.TerminalRenderer
 import java.nio.charset.StandardCharsets
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -28,8 +30,9 @@ import kotlin.math.roundToInt
  * normal remote-terminal round-trip.
  *
  * Covers hardware + soft-keyboard input, Ctrl/Alt modifiers, special keys (via
- * [KeyHandler]), resize on layout, and touch scrollback. Text selection/mouse
- * tracking are intentionally left for a later pass.
+ * [KeyHandler]), resize on layout, and touch scrollback — the last either pans
+ * our local transcript or, when the app has enabled mouse tracking, forwards
+ * swipes as wheel events. Text *selection* is intentionally left for a later pass.
  */
 @SuppressLint("ViewConstructor")
 class RemoteTerminalView(
@@ -144,13 +147,34 @@ class RemoteTerminalView(
                 distanceX: Float,
                 distanceY: Float,
             ): Boolean {
+                val s = session ?: return true
                 scrollRemainder += distanceY
                 val lineHeight = renderer.fontLineSpacing
                 val rows = (scrollRemainder / lineHeight).toInt()
-                if (rows != 0) {
-                    scrollRemainder -= rows * lineHeight
-                    // Dragging up (positive distanceY) reveals older lines.
-                    topRow -= rows
+                if (rows == 0) return true
+                scrollRemainder -= rows * lineHeight
+                // GestureDetector's distanceY = oldY − newY, so dragging the finger
+                // *down* the screen is negative → reveal older content (scroll up),
+                // matching natural touch scrolling.
+                val scrollUp = rows < 0
+                if (s.emulator.isMouseTrackingActive) {
+                    // The running app has requested mouse tracking — tmux with
+                    // `mouse on`, or a full-screen TUI (less/vim/Claude). Forward each
+                    // notch as a wheel event so it scrolls *its own* view; alt-screen
+                    // apps keep no local scrollback for us to pan. Gated on the actual
+                    // emulator mode, so it's a no-op (falls through to local scroll)
+                    // whenever mouse tracking is off — no protocol assumptions.
+                    val button = if (scrollUp) {
+                        TerminalEmulator.MOUSE_WHEELUP_BUTTON
+                    } else {
+                        TerminalEmulator.MOUSE_WHEELDOWN_BUTTON
+                    }
+                    val col = (e2.x / renderer.fontWidth).toInt() + 1
+                    val row = (e2.y / renderer.fontLineSpacing).toInt() + 1
+                    repeat(abs(rows)) { s.emulator.sendMouseEvent(button, col, row, true) }
+                } else {
+                    // No mouse tracking: pan our own scrollback transcript.
+                    topRow += rows
                     invalidate()
                 }
                 return true

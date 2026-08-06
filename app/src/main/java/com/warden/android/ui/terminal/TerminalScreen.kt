@@ -6,9 +6,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -191,6 +196,14 @@ private fun KeyBar(view: RemoteTerminalView) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                // Ride above the soft keyboard when it's open, and above the
+                // navigation bar when it isn't. union() takes the max per side, so
+                // the two never stack: IME height dominates when shown (it already
+                // spans the nav-bar region), nav-bar height applies when hidden.
+                // Because this is the Scaffold's bottomBar, its measured height
+                // grows with the IME and Scaffold shrinks the terminal above it —
+                // which fires RemoteTerminalView.onSizeChanged → the WS resize frame.
+                .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 8.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),

@@ -246,6 +246,23 @@ None are required for MVP, but worth noting:
   give the app a private raw terminal instead of a shared one.
 - **Push token registration** (`POST /push-token`) — only if/when notifications
   land (future phase).
+- **tmux `mouse on` for bridged attach sessions** (enables mobile swipe-scroll of
+  agent TUIs). The WS bridge is a plain `tmux attach-session` (`internal/daemon/
+  attach.go`), and agent TUIs run in tmux's **alt-screen**, which has *no*
+  scrollback — so neither our emulator's local transcript nor tmux copy-mode has
+  anything to reveal. The only mechanism that scrolls an agent's own history is a
+  **mouse wheel event forwarded to the app**, and tmux only forwards those when
+  the session has `mouse on` (otherwise it swallows the mouse DECSET and the
+  emulator's `isMouseTrackingActive()` never turns on). **App side is already
+  done** (§8.5): `RemoteTerminalView` forwards vertical swipes as
+  `MOUSE_WHEELUP/DOWN` *only when the emulator reports mouse tracking active*, so
+  it's contract-safe and auto-activates the moment the daemon flips mouse on;
+  until then it falls back to panning the local transcript. **Daemon ask:**
+  `set-option mouse on` on bridged sessions (ideally scoped to the attach, not the
+  user's global tmux). Tradeoff to weigh with the daemon owner: `mouse on` is a
+  session/server option, so it also changes click-to-position and drag-select
+  behaviour for **every** client of that session (incl. the web UI) — hence
+  "request, don't assume."
 
 ---
 
@@ -424,3 +441,60 @@ directory in this repo, or a dedicated repo. Recommendation: **separate repo**
 (distinct Gradle/Kotlin toolchain; keeps the GoReleaser flow and CI clean). The
 daemon API is the stable contract between them; version it against
 `openapi.yaml`.
+
+---
+
+## 10. Future scope — structured "chat" view (deferred; large, daemon-led)
+
+**Idea.** Instead of only streaming the raw tmux PTY, offer a mobile-native
+*chat* view of an agent: the daemon persists each agent's conversation as
+structured turns (user prompt / assistant text / tool call / tool result) and the
+app renders bubbles with markdown, collapsible tool calls, and syntax-highlighted
+diffs. This dissolves the two hardest terminal problems on a phone — scrollback
+(a chat is just a lazy list) and text selection — and lets **permission prompts
+render as MCQ** (radio for single-choice `1. Yes / 2. No`, checkboxes for
+multi-select), instead of the user hunting for a keystroke in a TUI.
+
+**Why it stays deferred (verdict: complement, not replacement).** Chat models the
+request→response loop but *not* the interactive moments a terminal handles for
+free: in-TUI permission prompts, live-updating UI (spinners, in-place diff panes,
+progress bars), and the raw host shell (P3). So the **terminal attach stays as the
+fallback / "advanced" view**; chat would be the default lens, one tap from the
+raw pane.
+
+**Feasibility research (against daemon source `/home/srjn45/dev/warden`,
+2026-08-06).** The general version genuinely does not exist yet:
+
+- **ScrivaDB is already the store.** `github.com/srjn45/scriva v1.2.1` backs the
+  daemon's session store (`internal/store/file.go`), so persisting turns to it is
+  not a new dependency — but no conversation/transcript collection exists today.
+- **Output access is on-demand pane scraping, not a maintained log.** Every reader
+  of agent output — `get_agent_output`, `digest`, `history`, snapshots, lifecycle
+  summaries — uses `tmux capture-pane -p -t <sess> -S -<N>` (a point-in-time tail
+  of the current pane). It is **lossy**: plain text, bounded lines, current buffer
+  only, no turn boundaries. There is **no `pipe-pane`** anywhere — nothing streams
+  the PTY into storage.
+- **The one structured source is Claude-Code-specific and file-based.** The daemon
+  parses Claude Code's own session **transcript JSONL** (`internal/digest/parse.go
+  ParseTranscript`, resolved via `backendFor(sess.Backend).TranscriptPath`) for
+  digests / context-token counting. Structured, but Claude-only (other backends
+  return no transcript path), read from the tool's own files, and not in ScrivaDB.
+- **Permission prompts:** the daemon already has a structured `approval` package
+  (`internal/approval/approval.go`, exposed via `approve` / `list_approvals`), so
+  *warden-native* approvals could render as MCQ cheaply. The *in-TUI* agent
+  prompts (Claude's own numbered menu) would still need detection/parsing.
+
+**Two implementation worlds:**
+
+1. **Claude-Code-only, cheap-ish.** Expose the existing transcript JSONL via a
+   new `GET /sessions/{id}/messages` + a live append stream; app renders it. Small
+   daemon surface, structured data already present.
+2. **Backend-agnostic, high-effort / brittle** (the version originally proposed).
+   Continuously `pipe-pane` each agent's PTY, parse per-backend TUI output
+   (claude/aider/codex/goose/cursor/crush/opencode — each differs and drifts per
+   version) into turns, and persist to ScrivaDB. This is the big, maintenance-heavy
+   build; **deferred**.
+
+**Decision:** documented for future scope; **not** on the near-term roadmap. If
+picked up, start with world (1) behind the same terminal fallback, and treat any
+capture/persistence work as a daemon change requested from the daemon owner.
