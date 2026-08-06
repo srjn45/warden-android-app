@@ -1,9 +1,16 @@
 name: Android CI
 
 # Builds the debug APK and runs the JVM unit tests on every push to main, every
-# PR, and on demand. The APK is uploaded as a run artifact for sideload testing
-# (debug-signed, so it installs without any release keystore). No daemon is
-# reachable in CI, so the env-gated LiveDaemonIntegrationTest self-skips.
+# PR, and on demand. No daemon is reachable in CI, so the env-gated
+# LiveDaemonIntegrationTest self-skips.
+#
+# Artifacts are deliberately sparse: the debug APK is uploaded only on manual
+# (workflow_dispatch) runs, and the unit-test report only when something failed.
+# Uploading both on every push was exhausting the account's Actions
+# artifact-storage quota, which failed the upload steps and turned CI red even
+# though the build+tests passed. The uploads are also continue-on-error, so a
+# quota hit can never fail the job. Need a debug APK for sideloading? Trigger the
+# workflow manually; the signed release APK comes from android-release.yml.
 #
 # The app is pure Kotlin + Gradle (no Node/Expo/NDK), so this is much lighter
 # than the Expo release-mobile.yml this repo's siblings use — just JDK 17 + the
@@ -52,16 +59,23 @@ jobs:
         run: ./gradlew :app:testDebugUnitTest :app:assembleDebug --no-daemon --stacktrace
 
       - name: Upload debug APK
+        # Manual runs only — see the header note on the artifact-storage quota.
+        if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: warden-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
 
       - name: Upload unit test report
-        if: always()
+        # Only when the build/test step failed — that's the only time it's useful.
+        if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: unit-test-report
           path: app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: ignore
+          retention-days: 7
