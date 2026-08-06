@@ -13,10 +13,32 @@ android {
         applicationId = "com.warden.android"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0-p0"
+        // Bumped for the v0.2.1 signed release (P0/P1/P2 shipped as versionCode 1
+        // by mistake). CI overrides these from the git tag; see the -P defaults.
+        versionCode = (project.findProperty("appVersionCode") as String?)?.toInt() ?: 2
+        versionName = (project.findProperty("appVersionName") as String?) ?: "0.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Release signing. The keystore never lives in the repo: locally it is read
+    // from ANDROID_KEYSTORE_PATH (or app/release.keystore if present); in CI the
+    // release workflow decodes ANDROID_KEYSTORE_BASE64 to that path. When no
+    // keystore is available (ordinary local/debug builds, PR CI) the release
+    // build type simply falls back to debug signing so nothing breaks.
+    val keystorePath = System.getenv("ANDROID_KEYSTORE_PATH")
+        ?: rootProject.file("app/release.keystore").takeIf { it.exists() }?.path
+    val releaseKeystore = keystorePath?.let { file(it) }?.takeIf { it.exists() }
+
+    signingConfigs {
+        create("release") {
+            if (releaseKeystore != null) {
+                storeFile = releaseKeystore
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
     }
 
     buildTypes {
@@ -26,6 +48,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfig = if (releaseKeystore != null) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 

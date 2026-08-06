@@ -5,7 +5,7 @@ fleet of coding agents from a phone. The warden web UI is awkward on mobile; thi
 app is a native, terminal-first client that talks directly to the warden daemon's
 remote API (LAN, Tailscale, or Cloudflare tunnel).
 
-> **Status: P2 built.** Connect + live SSE-driven agent list (P0); an interactive
+> **Status: P2 built, v0.2.1 signed.** Connect + live SSE-driven agent list (P0); an interactive
 > **terminal** (P1) — tap an agent to attach to its tmux PTY over a binary
 > WebSocket, with a soft-keyboard-friendly extra-keys bar and resize, reusing
 > Termux's emulator + renderer driven from the remote stream (no local subprocess,
@@ -18,7 +18,13 @@ remote API (LAN, Tailscale, or Cloudflare tunnel).
 > as-built notes (§8.1 P0, §8.2 P1, §8.3 P2).
 >
 > **Build:** `./gradlew :app:assembleDebug` (Android SDK with the `android-36`
-> platform + JDK 17 required).
+> platform + JDK 17 required). Tagged releases (`v*.*.*`) publish a **signed**
+> `:app:assembleRelease` APK via CI, using a stable keystore held in the
+> `ANDROID_KEYSTORE_*` repo secrets — so each release upgrades in place over the
+> last. (Switching from the old debug-signed builds is a one-time signature
+> change: uninstall any pre-0.2.1 build once, then future updates install
+> cleanly.) The keystore itself is never committed (`.gitignore` blocks
+> `*.jks`/`*.keystore`); losing it means never being able to update the app.
 
 ## MVP scope
 

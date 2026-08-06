@@ -384,6 +384,37 @@ Create + delete, mapped onto existing REST endpoints — **no daemon changes.**
   are covered by the typed transport + manual use only. On-device rendering still
   pending an emulator/AVD.
 
+### 8.4 Release signing (as built, v0.2.1)
+
+Through v0.2.0 the release CI published the **debug** APK. The Android debug
+keystore is generated fresh per machine, so each CI run produced a *different*
+signing certificate — every release therefore failed to install over the
+previous one (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, a signature mismatch). v0.2.1
+fixes this with a proper release identity:
+
+- **Stable keystore** — a 4096-bit RSA / PKCS12 keystore (`CN=Warden Android`,
+  10 000-day validity) generated once and kept **outside the repo** at
+  `~/.warden-android/warden-release.jks` (credentials alongside it, `chmod 600`).
+  `.gitignore` blocks `*.jks`/`*.keystore` so it can never be committed. **Losing
+  this keystore means the app can never be updated again** — back it up.
+- **Signing config** (`app/build.gradle.kts`) reads the keystore path +
+  passwords from `ANDROID_KEYSTORE_PATH` / `ANDROID_KEYSTORE_PASSWORD` /
+  `ANDROID_KEY_ALIAS` / `ANDROID_KEY_PASSWORD`. When no keystore is present
+  (ordinary local builds, PR CI) the `release` build type falls back to debug
+  signing, so nothing breaks — signing is applied only when the keystore exists.
+- **CI** — the release workflow decodes `ANDROID_KEYSTORE_BASE64` (repo secret)
+  to a temp file, builds `:app:assembleRelease`, and **verifies** with
+  `apksigner` that the result is release-signed (not `Android Debug`) and
+  non-debuggable before publishing `app-release.apk`. `versionName` comes from
+  the tag (`v0.2.1` → `0.2.1`) and `versionCode` from the monotonic run number
+  (`-PappVersionName`/`-PappVersionCode`); both default to `0.2.1`/`2` locally.
+- **One-time cost:** moving from debug- to release-signing changes the cert, so
+  any pre-0.2.1 build must be uninstalled once; every release from 0.2.1 onward
+  installs in place.
+
+Verified locally: `apksigner` reports `CN=Warden Android`, APK Signature Scheme
+v2, non-debuggable, `versionCode 2` / `versionName 0.2.1`.
+
 ---
 
 ## 9. Repo placement
