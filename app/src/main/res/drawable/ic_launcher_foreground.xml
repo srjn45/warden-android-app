@@ -1,13 +1,38 @@
+<!-- Adaptive-icon foreground: the Warden badge (brand/warden-symbol.svg), scaled to
+     90% about center so the hexagon's points survive the circular launcher mask. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Simple shield glyph on the adaptive-icon safe area. -->
-    <path
-        android:fillColor="#4ADE80"
-        android:pathData="M54,30 L74,38 L74,56 C74,68 65,76 54,80 C43,76 34,68 34,56 L34,38 Z" />
-    <path
-        android:fillColor="#0B3D2E"
-        android:pathData="M48,54 L52,60 L61,46 L57,44 L51,53 L50,51 Z" />
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+    <group
+        android:pivotX="120"
+        android:pivotY="120"
+        android:scaleX="0.9"
+        android:scaleY="0.9">
+
+        <path
+            android:fillColor="#36506B"
+            android:strokeColor="#36506B"
+            android:strokeWidth="14"
+            android:strokeLineJoin="round"
+            android:pathData="M120,20 L206.6,70 L206.6,170 L120,220 L33.4,170 L33.4,70 Z" />
+        <path
+            android:strokeColor="#EEF2F5"
+            android:strokeWidth="5"
+            android:strokeLineJoin="round"
+            android:pathData="M120,44 L185.8,82 L185.8,158 L120,196 L54.2,158 L54.2,82 Z" />
+        <path
+            android:strokeColor="#EEF2F5"
+            android:strokeWidth="17"
+            android:strokeLineJoin="round"
+            android:strokeLineCap="round"
+            android:pathData="M70,84 L95,156 L120,112 L145,156 L170,84" />
+        <path
+            android:strokeColor="#36506B"
+            android:strokeWidth="8"
+            android:strokeLineJoin="round"
+            android:strokeLineCap="round"
+            android:pathData="M70,84 L95,156 L120,112 L145,156 L170,84" />
+    </group>
 </vector>

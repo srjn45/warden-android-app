@@ -1,0 +1,38 @@
+<!-- Warden badge symbol, ported 1:1 from brand/warden-symbol.svg (viewBox 240).
+     The hexagon badge doubles as the "W"; pair it with "arden" for the wordmark.
+     Palette: Slate #36506B, Paper #EEF2F5. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="240dp"
+    android:height="240dp"
+    android:viewportWidth="240"
+    android:viewportHeight="240">
+
+    <!-- Outer hexagon: slate fill with a round-join slate stroke. -->
+    <path
+        android:fillColor="#36506B"
+        android:strokeColor="#36506B"
+        android:strokeWidth="14"
+        android:strokeLineJoin="round"
+        android:pathData="M120,20 L206.6,70 L206.6,170 L120,220 L33.4,170 L33.4,70 Z" />
+
+    <!-- Inner hexagon outline. -->
+    <path
+        android:strokeColor="#EEF2F5"
+        android:strokeWidth="5"
+        android:strokeLineJoin="round"
+        android:pathData="M120,44 L185.8,82 L185.8,158 L120,196 L54.2,158 L54.2,82 Z" />
+
+    <!-- Double-line W: thick Paper stroke under a slate over-stroke = hollow outline. -->
+    <path
+        android:strokeColor="#EEF2F5"
+        android:strokeWidth="17"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M70,84 L95,156 L120,112 L145,156 L170,84" />
+    <path
+        android:strokeColor="#36506B"
+        android:strokeWidth="8"
+        android:strokeLineJoin="round"
+        android:strokeLineCap="round"
+        android:pathData="M70,84 L95,156 L120,112 L145,156 L170,84" />
+</vector>
