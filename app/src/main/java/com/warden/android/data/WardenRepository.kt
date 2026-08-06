@@ -321,6 +321,22 @@ class WardenRepository(val store: ConnectionStore) {
     }
 
     /**
+     * Restores an orphaned agent: the daemon re-creates its tmux session and
+     * resumes it, keeping the same id, worktree, and history. The row flips out
+     * of the `orphaned` state on the next SSE snapshot.
+     */
+    suspend fun restoreAgent(id: String): Result<Unit> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = c.api.restore(id)
+            if (resp.isSuccessful) Result.success(Unit)
+            else Result.failure(HttpStatusException(resp.code()))
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Deletes an agent: terminate (best-effort — a 404 or already-dead agent is
      * fine) then delete the record, optionally removing the worktree first. The
      * order matters: killing the tmux session before dropping the record avoids

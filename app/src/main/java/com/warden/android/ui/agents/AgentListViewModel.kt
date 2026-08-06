@@ -149,6 +149,25 @@ class AgentListViewModel(
         }
     }
 
+    /**
+     * Restore an orphaned [session]. The daemon re-creates its tmux session and
+     * resumes it; the row leaves the `orphaned` state on the next SSE snapshot.
+     * Here we only report the outcome via the transient [message].
+     */
+    fun restoreAgent(session: Session) {
+        viewModelScope.launch {
+            repo.restoreAgent(session.id)
+                .onSuccess {
+                    _state.update { it.copy(message = "Restoring ${session.displayName}…") }
+                }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(message = "Restore failed: ${e.message ?: "unknown error"}")
+                    }
+                }
+        }
+    }
+
     /** Acknowledge the transient snackbar message. */
     fun clearMessage() = _state.update { it.copy(message = null) }
 

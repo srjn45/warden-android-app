@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -62,6 +63,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.warden.android.data.Connection
 import com.warden.android.data.model.Backend
 import com.warden.android.data.model.Session
+import com.warden.android.data.model.Status
 import com.warden.android.ui.HostPickerTitle
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -157,6 +159,7 @@ fun AgentListScreen(
                         onAgentClick = onAgentClick,
                         onInfoClick = { pendingInfo = it },
                         onDeleteClick = { pendingDelete = it },
+                        onRestoreClick = { viewModel.restoreAgent(it) },
                     )
                 }
             }
@@ -302,6 +305,7 @@ private fun AgentList(
     onAgentClick: (Session) -> Unit,
     onInfoClick: (Session) -> Unit,
     onDeleteClick: (Session) -> Unit,
+    onRestoreClick: (Session) -> Unit,
 ) {
     val groups = remember(agents, groupMode) { groupSessions(agents, groupMode) }
     // Collapsed group keys; reset whenever the grouping dimension changes.
@@ -315,6 +319,7 @@ private fun AgentList(
                     onClick = { onAgentClick(agent) },
                     onInfo = { onInfoClick(agent) },
                     onDelete = { onDeleteClick(agent) },
+                    onRestore = { onRestoreClick(agent) },
                 )
                 HorizontalDivider()
             }
@@ -336,6 +341,7 @@ private fun AgentList(
                             onClick = { onAgentClick(agent) },
                             onInfo = { onInfoClick(agent) },
                             onDelete = { onDeleteClick(agent) },
+                            onRestore = { onRestoreClick(agent) },
                         )
                         HorizontalDivider()
                     }
@@ -409,7 +415,13 @@ private fun GroupHeader(
 }
 
 @Composable
-private fun AgentRow(agent: Session, onClick: () -> Unit, onInfo: () -> Unit, onDelete: () -> Unit) {
+private fun AgentRow(
+    agent: Session,
+    onClick: () -> Unit,
+    onInfo: () -> Unit,
+    onDelete: () -> Unit,
+    onRestore: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -426,7 +438,12 @@ private fun AgentRow(agent: Session, onClick: () -> Unit, onInfo: () -> Unit, on
             )
             Spacer(Modifier.width(8.dp))
             StatusBadge(agent.status)
-            RowOverflowMenu(onInfo = onInfo, onDelete = onDelete)
+            RowOverflowMenu(
+                onInfo = onInfo,
+                onDelete = onDelete,
+                // Restore only makes sense for a lost/orphaned session.
+                onRestore = onRestore.takeIf { agent.status == Status.ORPHANED },
+            )
         }
 
         if (agent.subject.isNotBlank()) {
@@ -465,7 +482,11 @@ private fun AgentRow(agent: Session, onClick: () -> Unit, onInfo: () -> Unit, on
 }
 
 @Composable
-private fun RowOverflowMenu(onInfo: () -> Unit, onDelete: () -> Unit) {
+private fun RowOverflowMenu(
+    onInfo: () -> Unit,
+    onDelete: () -> Unit,
+    onRestore: (() -> Unit)?,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -476,6 +497,18 @@ private fun RowOverflowMenu(onInfo: () -> Unit, onDelete: () -> Unit) {
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            // Only present for orphaned agents (see AgentRow) — the primary action
+            // for a lost session, so it leads the menu.
+            if (onRestore != null) {
+                DropdownMenuItem(
+                    text = { Text("Restore") },
+                    leadingIcon = { Icon(Icons.Filled.Restore, contentDescription = null) },
+                    onClick = {
+                        expanded = false
+                        onRestore()
+                    },
+                )
+            }
             DropdownMenuItem(
                 text = { Text("Agent info") },
                 leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },

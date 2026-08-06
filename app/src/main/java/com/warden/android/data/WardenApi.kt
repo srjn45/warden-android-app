@@ -98,6 +98,10 @@ interface WardenApi {
     @POST("api/v1/sessions/{id}/terminate")
     suspend fun terminate(@Path("id") id: String): Response<StatusResponse>
 
+    /** Restore (re-create + resume) a lost/orphaned session. 200 / 404. */
+    @POST("api/v1/sessions/{id}/restore")
+    suspend fun restore(@Path("id") id: String): Response<StatusResponse>
+
     /** Delete a session record. [DeleteResponse.warning] set if it may be live. */
     @POST("api/v1/sessions/{id}/delete")
     suspend fun delete(
