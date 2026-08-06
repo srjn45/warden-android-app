@@ -1,6 +1,7 @@
 package com.warden.android.ui.agents
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -54,6 +55,9 @@ fun HostDrawer(
                 modifier = Modifier.padding(start = 28.dp, top = 20.dp, bottom = 12.dp),
             )
             HorizontalDivider()
+            // Breathing room so the first host's selected highlight doesn't butt up
+            // against the divider under the "Hosts" heading.
+            Spacer(Modifier.height(8.dp))
 
             LazyColumn(modifier = Modifier.weight(1f)) {
                 items(connections, key = { it.label }) { host ->

@@ -13,8 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -29,22 +33,49 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.warden.android.data.Connection
 import com.warden.android.data.model.Pipeline
+import com.warden.android.ui.HostPickerTitle
 
 /**
  * The Pipelines tab: a pull-to-refresh list of the active host's pipelines. Each
  * row shows the pipeline's status and job progress; tapping opens its detail DAG.
+ *
+ * The top bar mirrors the Agents tab — a hamburger that opens the shared host drawer
+ * and a title that doubles as a quick host picker — so the two tabs read the same.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PipelinesScreen(
     viewModel: PipelineListViewModel,
     onPipelineClick: (Pipeline) -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
+    hostLabel: String = "",
+    hosts: List<Connection> = emptyList(),
+    activeLabel: String? = null,
+    onSwitchHost: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Pipelines") }) },
+        topBar = {
+            TopAppBar(
+                navigationIcon = {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(Icons.Filled.Menu, contentDescription = "Hosts menu")
+                    }
+                },
+                title = {
+                    HostPickerTitle(
+                        title = "Pipelines",
+                        hostLabel = hostLabel,
+                        hosts = hosts,
+                        activeLabel = activeLabel,
+                        onSwitchHost = onSwitchHost,
+                    )
+                },
+            )
+        },
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.refreshing,
