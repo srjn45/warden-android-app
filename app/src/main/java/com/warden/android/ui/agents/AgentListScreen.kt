@@ -18,9 +18,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -55,6 +58,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.warden.android.data.Connection
+import com.warden.android.data.displayHost
 import com.warden.android.data.model.Session
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -63,6 +68,10 @@ fun AgentListScreen(
     viewModel: AgentListViewModel,
     onAgentClick: (Session) -> Unit = {},
     onCreateClick: () -> Unit = {},
+    onOpenDrawer: () -> Unit = {},
+    hosts: List<Connection> = emptyList(),
+    activeLabel: String? = null,
+    onSwitchHost: (String) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -81,17 +90,18 @@ fun AgentListScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = {
-                    Column {
-                        Text("Agents")
-                        Text(
-                            text = state.hostLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                navigationIcon = {
+                    IconButton(onClick = onOpenDrawer) {
+                        Icon(Icons.Filled.Menu, contentDescription = "Hosts menu")
                     }
+                },
+                title = {
+                    HostPickerTitle(
+                        hostLabel = state.hostLabel,
+                        hosts = hosts,
+                        activeLabel = activeLabel,
+                        onSwitchHost = onSwitchHost,
+                    )
                 },
                 actions = { StreamIndicator(state.stream) },
             )
@@ -380,6 +390,64 @@ private fun RowOverflowMenu(onDelete: () -> Unit) {
                     onDelete()
                 },
             )
+        }
+    }
+}
+
+/**
+ * The title doubles as a host picker: it shows "Agents" over the active host, and
+ * — when more than one host is saved — a dropdown to switch between them. The
+ * hamburger/drawer is the full manager (add/disconnect); this is the quick swap.
+ */
+@Composable
+private fun HostPickerTitle(
+    hostLabel: String,
+    hosts: List<Connection>,
+    activeLabel: String?,
+    onSwitchHost: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val multi = hosts.size > 1
+    val shownHost = remember(hostLabel) { hostLabel.substringAfter("://").trimEnd('/') }
+
+    Box {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.clickable(enabled = multi) { expanded = true },
+        ) {
+            Column(modifier = Modifier.weight(1f, fill = false)) {
+                Text("Agents")
+                Text(
+                    text = shownHost,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (multi) {
+                Icon(
+                    imageVector = Icons.Filled.ArrowDropDown,
+                    contentDescription = "Switch host",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            hosts.forEach { host ->
+                DropdownMenuItem(
+                    text = { Text(host.displayHost(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    leadingIcon = {
+                        if (host.label == activeLabel) {
+                            Icon(Icons.Filled.Check, contentDescription = "Active host")
+                        }
+                    },
+                    onClick = {
+                        expanded = false
+                        onSwitchHost(host.label)
+                    },
+                )
+            }
         }
     }
 }

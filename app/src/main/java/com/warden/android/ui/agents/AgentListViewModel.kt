@@ -6,10 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.warden.android.data.SettingsStore
 import com.warden.android.data.WardenRepository
 import com.warden.android.data.model.Session
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -40,23 +43,51 @@ class AgentListViewModel(
     )
     val state: StateFlow<AgentListUiState> = _state.asStateFlow()
 
+    /** The live SSE collection; cancelled + replaced whenever the host switches. */
+    private var streamJob: Job? = null
+
     init {
-        observeStream()
+        observeActiveHost()
     }
 
     /**
-     * Collects the SSE snapshot stream. On failure it flips to Disconnected and
-     * re-subscribes (tmux holds the session server-side, so a dropped socket is
-     * cheap to re-establish — design.md §2.1, §6). No aggressive backoff needed
-     * for P0; a fresh collect is triggered on the next lifecycle resume via the
-     * ViewModel staying alive, and pull-to-refresh gives a manual retry.
+     * One VM survives host switches: it watches [WardenRepository.hosts] and, each
+     * time the active host changes, clears the list and (re)opens the stream
+     * against the new host. This tears the old socket down deterministically —
+     * cheaper and leak-free versus re-keying a fresh ViewModel per host.
+     */
+    private fun observeActiveHost() {
+        viewModelScope.launch {
+            repo.hosts
+                .map { it.activeLabel }
+                .distinctUntilChanged()
+                .collect {
+                    _state.update {
+                        it.copy(
+                            hostLabel = repo.active?.baseUrl ?: "",
+                            agents = emptyList(),
+                            stream = StreamStatus.Connecting,
+                            error = null,
+                        )
+                    }
+                    startStream()
+                }
+        }
+    }
+
+    /**
+     * Collects the SSE snapshot stream for the active host. On failure it flips to
+     * Disconnected (tmux holds the session server-side, so a dropped socket is
+     * cheap to re-establish — design.md §2.1, §6); pull-to-refresh and Reconnect
+     * give a manual retry.
      *
      * Agents are stored in the daemon's own order — we deliberately do NOT sort.
      * Ordering by status/updated_at made rows jump on every agent action, which
      * is disorienting on mobile; grouping (below) is the opt-in way to organise.
      */
-    private fun observeStream() {
-        viewModelScope.launch {
+    private fun startStream() {
+        streamJob?.cancel()
+        streamJob = viewModelScope.launch {
             repo.sessionStream()
                 .catch { e ->
                     _state.update {
@@ -124,7 +155,7 @@ class AgentListViewModel(
     /** Manual reconnect for the Disconnected state. */
     fun reconnect() {
         _state.update { it.copy(stream = StreamStatus.Connecting, error = null) }
-        observeStream()
+        startStream()
     }
 
     class Factory(

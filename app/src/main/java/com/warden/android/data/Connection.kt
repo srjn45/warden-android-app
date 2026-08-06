@@ -58,3 +58,6 @@ data class Connection(
         }
     }
 }
+
+/** A compact host label for the picker/drawer: the base URL minus scheme + slash. */
+fun Connection.displayHost(): String = baseUrl.substringAfter("://").trimEnd('/')

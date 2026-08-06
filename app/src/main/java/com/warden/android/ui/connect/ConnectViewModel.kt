@@ -28,15 +28,22 @@ data class ConnectUiState(
     val canTest: Boolean get() = host.isNotBlank() && token.isNotBlank() && test != TestState.Testing
 }
 
-class ConnectViewModel(private val repo: WardenRepository) : ViewModel() {
+class ConnectViewModel(
+    private val repo: WardenRepository,
+    prefill: Boolean = true,
+) : ViewModel() {
 
     private val _state = MutableStateFlow(ConnectUiState())
     val state: StateFlow<ConnectUiState> = _state.asStateFlow()
 
     init {
-        // Pre-fill from the active saved connection so re-editing is easy.
-        repo.active?.let { c ->
-            _state.update { it.copy(host = c.baseUrl, token = c.token) }
+        // Pre-fill from the active saved connection so re-editing is easy. When
+        // adding a NEW host from the drawer we start blank instead (prefill=false)
+        // so the active host's token isn't carried over.
+        if (prefill) {
+            repo.active?.let { c ->
+                _state.update { it.copy(host = c.baseUrl, token = c.token) }
+            }
         }
     }
 
@@ -76,9 +83,12 @@ class ConnectViewModel(private val repo: WardenRepository) : ViewModel() {
         }
     }
 
-    class Factory(private val repo: WardenRepository) : ViewModelProvider.Factory {
+    class Factory(
+        private val repo: WardenRepository,
+        private val prefill: Boolean = true,
+    ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T =
-            ConnectViewModel(repo) as T
+            ConnectViewModel(repo, prefill) as T
     }
 }

@@ -67,6 +67,13 @@ class ConnectionStore(context: Context) {
         save(Persisted(connections = others + connection, activeLabel = connection.label))
     }
 
+    /** Marks an already-saved connection active by [label] (no-op if unknown). */
+    fun setActive(label: String) {
+        val state = load()
+        if (state.connections.none { it.label == label }) return
+        save(state.copy(activeLabel = label))
+    }
+
     /** Removes a connection by label; clears active if it was the one removed. */
     fun remove(label: String) {
         val state = load()

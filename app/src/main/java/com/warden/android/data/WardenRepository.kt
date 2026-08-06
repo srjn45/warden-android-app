@@ -11,6 +11,9 @@ import com.warden.android.data.model.Verdict
 import com.warden.android.data.terminal.TerminalListener
 import com.warden.android.data.terminal.TerminalTransport
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.serialization.Serializable
 import retrofit2.Response
 import java.io.IOException
@@ -30,6 +33,12 @@ sealed interface ConnectionResult {
     data class Unreachable(val message: String) : ConnectionResult
 }
 
+/** Reactive view of the saved hosts and which one is currently active. */
+data class HostsState(
+    val connections: List<Connection> = emptyList(),
+    val activeLabel: String? = null,
+)
+
 /**
  * Single source of truth for the active connection and its transport. Holds the
  * live [WardenClient], exposes the read-only REST + SSE surface, and runs the
@@ -44,8 +53,21 @@ class WardenRepository(val store: ConnectionStore) {
     var active: Connection? = store.active()
         private set
 
+    /**
+     * Reactive snapshot of all saved hosts and which one is active, so the host
+     * drawer + title-bar picker recompose as connections are added, switched, or
+     * forgotten. Only the active host runs a live stream/attach at any moment;
+     * switching is instant because every host's token is already saved.
+     */
+    private val _hosts = MutableStateFlow(HostsState(store.connections(), active?.label))
+    val hosts: StateFlow<HostsState> = _hosts.asStateFlow()
+
     init {
         active?.let { client = WardenClient(it) }
+    }
+
+    private fun refreshHosts() {
+        _hosts.value = HostsState(store.connections(), active?.label)
     }
 
     /** Persists [connection], makes it active, and rebuilds the client. */
@@ -53,6 +75,32 @@ class WardenRepository(val store: ConnectionStore) {
         store.upsertAndActivate(connection)
         active = connection
         client = WardenClient(connection)
+        refreshHosts()
+    }
+
+    /**
+     * Switches the foreground host to an already-saved connection (by [label]).
+     * Rebuilds the transport so the next stream/attach targets it; a no-op if the
+     * label is unknown or already active.
+     */
+    fun switchTo(label: String) {
+        val target = store.connections().firstOrNull { it.label == label } ?: return
+        if (target.label == active?.label) return
+        store.setActive(label)
+        active = target
+        client = WardenClient(target)
+        refreshHosts()
+    }
+
+    /**
+     * Forgets a saved host, dropping its stored token. If it was active, falls
+     * back to the next saved host (or none — the caller then returns to Connect).
+     */
+    fun disconnect(label: String) {
+        store.remove(label)
+        active = store.active()
+        client = active?.let { WardenClient(it) }
+        refreshHosts()
     }
 
     /**

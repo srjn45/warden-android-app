@@ -10,8 +10,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.warden.android.WardenApplication
 import com.warden.android.data.WardenRepository
-import com.warden.android.ui.agents.AgentListScreen
-import com.warden.android.ui.agents.AgentListViewModel
+import com.warden.android.ui.agents.AgentsHome
 import com.warden.android.ui.connect.ConnectScreen
 import com.warden.android.ui.connect.ConnectViewModel
 import com.warden.android.ui.create.CreateAgentScreen
@@ -22,6 +21,7 @@ import java.net.URLEncoder
 
 private object Routes {
     const val CONNECT = "connect"
+    const val ADD_HOST = "add_host"
     const val AGENTS = "agents"
     const val CREATE = "create"
     const val TERMINAL = "terminal"
@@ -45,22 +45,35 @@ fun WardenNavHost(repository: WardenRepository) {
                 },
             )
         }
+        // "Add host" from the drawer: the same Connect form, started blank, layered
+        // over the agent list. On success it just pops back — the repository has
+        // already made the new host active, so the list + drawer update in place.
+        composable(Routes.ADD_HOST) {
+            val vm: ConnectViewModel = viewModel(
+                factory = ConnectViewModel.Factory(repository, prefill = false),
+            )
+            ConnectScreen(
+                viewModel = vm,
+                onConnected = { navController.popBackStack() },
+            )
+        }
         composable(Routes.AGENTS) {
             val settings = (LocalContext.current.applicationContext as WardenApplication).settings
-            // Key the ViewModel to the active base URL so switching hosts later
-            // gives a fresh stream rather than a stale one.
-            val vm: AgentListViewModel = viewModel(
-                key = "agents:${repository.active?.baseUrl}",
-                factory = AgentListViewModel.Factory(repository, settings),
-            )
-            AgentListScreen(
-                viewModel = vm,
+            AgentsHome(
+                repository = repository,
+                settings = settings,
                 onAgentClick = { agent ->
                     val id = URLEncoder.encode(agent.id, "UTF-8")
                     val label = URLEncoder.encode(agent.displayName, "UTF-8")
                     navController.navigate("${Routes.TERMINAL}/$id/$label")
                 },
                 onCreateClick = { navController.navigate(Routes.CREATE) },
+                onAddHost = { navController.navigate(Routes.ADD_HOST) },
+                onNoConnections = {
+                    navController.navigate(Routes.CONNECT) {
+                        popUpTo(Routes.AGENTS) { inclusive = true }
+                    }
+                },
             )
         }
         composable(Routes.CREATE) {
