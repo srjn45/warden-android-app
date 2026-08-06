@@ -1,5 +1,6 @@
 package com.warden.android.data
 
+import com.warden.android.data.model.BackendInfo
 import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.DirListing
 import com.warden.android.data.model.RemoveWorktreeRequest
@@ -172,6 +173,25 @@ class WardenRepository(val store: ConnectionStore) {
             val resp = c.api.listRoles()
             if (resp.isSuccessful) {
                 Result.success(resp.body()?.roles ?: emptyList())
+            } else {
+                Result.failure(HttpStatusException(resp.code()))
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Available backends for the spawn-sheet picker. Prefers `GET /backends`
+     * (warden ≥ v8.16.7); a 404 (older daemon) or network error surfaces as a
+     * failure so the caller can fall back to the static [com.warden.android.data.model.Backend] list.
+     */
+    suspend fun listBackends(): Result<List<BackendInfo>> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = c.api.listBackends()
+            if (resp.isSuccessful) {
+                Result.success(resp.body()?.backends ?: emptyList())
             } else {
                 Result.failure(HttpStatusException(resp.code()))
             }

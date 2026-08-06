@@ -84,4 +84,45 @@ class SpawnModelsTest {
         assertEquals("Claude Code", Backend.labelFor(""))
         assertEquals("mystery", Backend.labelFor("mystery"))
     }
+
+    @Test
+    fun `the backends endpoint body decodes with all four fields`() {
+        val body = """
+            {"backends":[
+              {"id":"claude","display_name":"Claude Code","default":true,"available":true},
+              {"id":"terminal","display_name":"Terminal (plain shell)","default":false,"available":false}
+            ]}
+        """.trimIndent()
+        val resp = WardenJson.decodeFromString<BackendsResponse>(body)
+        assertEquals(2, resp.backends.size)
+        val claude = resp.backends[0]
+        assertEquals("claude", claude.id)
+        assertTrue(claude.default)
+        assertTrue(claude.available)
+        val terminal = resp.backends[1]
+        assertEquals("Terminal (plain shell)", terminal.label)
+        assertFalse(terminal.available)
+        assertEquals(Backend("terminal", "Terminal (plain shell)"), terminal.toBackend())
+    }
+
+    @Test
+    fun `a backend missing the available field defaults to available (never grey out on a guess)`() {
+        val info = WardenJson.decodeFromString<BackendInfo>("""{"id":"aider","display_name":"Aider"}""")
+        assertTrue(info.available)
+        // A blank display_name falls back to this build's static label, then the raw id.
+        assertEquals("Aider", WardenJson.decodeFromString<BackendInfo>("""{"id":"aider"}""").label)
+        assertEquals("mystery", WardenJson.decodeFromString<BackendInfo>("""{"id":"mystery"}""").label)
+    }
+
+    @Test
+    fun `staticInfos mirrors ALL with the default flagged and all available`() {
+        val infos = Backend.staticInfos()
+        assertEquals(Backend.ALL.map { it.id }, infos.map { it.id })
+        assertTrue("every static backend is assumed installed", infos.all { it.available })
+        assertEquals(
+            "exactly the claude entry carries the default flag",
+            listOf("claude"),
+            infos.filter { it.default }.map { it.id },
+        )
+    }
 }

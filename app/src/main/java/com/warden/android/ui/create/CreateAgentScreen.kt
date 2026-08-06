@@ -52,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.warden.android.data.model.Backend
+import com.warden.android.data.model.BackendInfo
 import com.warden.android.data.model.DirEntry
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,7 +90,11 @@ fun CreateAgentScreen(
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            BackendDropdown(selected = state.backend, onSelect = viewModel::setBackend)
+            BackendDropdown(
+                selected = state.backend,
+                backends = state.backends,
+                onSelect = viewModel::setBackend,
+            )
 
             OutlinedTextField(
                 value = state.cwd,
@@ -184,7 +189,11 @@ fun CreateAgentScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BackendDropdown(selected: Backend, onSelect: (Backend) -> Unit) {
+private fun BackendDropdown(
+    selected: Backend,
+    backends: List<BackendInfo>,
+    onSelect: (Backend) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedTextField(
@@ -201,11 +210,16 @@ private fun BackendDropdown(selected: Backend, onSelect: (Backend) -> Unit) {
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
-            Backend.ALL.forEach { backend ->
+            backends.forEach { backend ->
+                // Un-installed backends (per the daemon's LookPath check) are
+                // shown but disabled, so the list still documents what exists.
                 DropdownMenuItem(
-                    text = { Text(backend.label) },
+                    text = {
+                        Text(if (backend.available) backend.label else "${backend.label} (not installed)")
+                    },
+                    enabled = backend.available,
                     onClick = {
-                        onSelect(backend)
+                        onSelect(backend.toBackend())
                         expanded = false
                     },
                 )

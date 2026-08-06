@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.warden.android.data.SpawnOutcome
 import com.warden.android.data.WardenRepository
 import com.warden.android.data.model.Backend
+import com.warden.android.data.model.BackendInfo
 import com.warden.android.data.model.DirListing
 import com.warden.android.data.model.RoleInfo
 import com.warden.android.data.model.Session
@@ -26,6 +27,12 @@ data class DirBrowser(
 
 data class CreateAgentUiState(
     val backend: Backend = Backend.DEFAULT,
+    /**
+     * Backend picker options. Seeds from the static list so the picker is never
+     * empty, then swaps in the live `GET /backends` result (which also carries
+     * per-backend install [BackendInfo.available]).
+     */
+    val backends: List<BackendInfo> = Backend.staticInfos(),
     val cwd: String = "",
     val name: String = "",
     val role: String = "",
@@ -59,6 +66,13 @@ class CreateAgentViewModel(private val repo: WardenRepository) : ViewModel() {
                 _state.update { it.copy(roles = roles) }
             }
             // A failed roles fetch is non-fatal — the picker just stays empty.
+        }
+        viewModelScope.launch {
+            // Prefer the live registry; keep the static seed on 404 (older
+            // daemon) / network error, and ignore an empty response the same way.
+            repo.listBackends().onSuccess { backends ->
+                if (backends.isNotEmpty()) _state.update { it.copy(backends = backends) }
+            }
         }
     }
 

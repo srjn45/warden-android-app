@@ -4,12 +4,14 @@ package com.warden.android.data.model
  * An agent backend for the spawn-sheet picker: the wire [id] sent as
  * `SpawnRequest.backend` and a human [label].
  *
- * The daemon has no `/backends` endpoint, so this list is a static mirror of its
- * backend registry (the `internal/agentbackend/backends` package — each
- * backend's `ID()` and `DisplayName()`, including the plain-shell `terminal`
- * backend). It can drift if warden adds a backend;
- * a future `GET /api/v1/backends` would make it self-updating. [DEFAULT]
- * ("claude") is what the daemon assumes for an empty backend, so it leads the list.
+ * This list is a static mirror of the daemon's backend registry (the
+ * `internal/agentbackend/backends` package — each backend's `ID()` and
+ * `DisplayName()`, including the plain-shell `terminal` backend). At runtime the
+ * create sheet prefers the live `GET /api/v1/backends` endpoint (warden ≥
+ * v8.16.7) and only falls back to this list (via [staticInfos]) when the daemon
+ * is older (404) or unreachable — so drift only shows on legacy daemons.
+ * [DEFAULT] ("claude") is what the daemon assumes for an empty backend, so it
+ * leads the list.
  */
 data class Backend(val id: String, val label: String) {
     companion object {
@@ -27,6 +29,16 @@ data class Backend(val id: String, val label: String) {
             Backend("opencode", "OpenCode"),
             Backend("terminal", "Terminal (plain shell)"),
         )
+
+        /**
+         * The static list as [BackendInfo]s, for when the live `/backends`
+         * endpoint is unavailable. Availability is unknown offline, so every
+         * entry is marked available (never grey out on a guess); the [DEFAULT]
+         * entry carries the `default` flag.
+         */
+        fun staticInfos(): List<BackendInfo> = ALL.map {
+            BackendInfo(id = it.id, display_name = it.label, default = it == DEFAULT, available = true)
+        }
 
         /**
          * Display label for a backend [id] as it appears on a session. Falls back

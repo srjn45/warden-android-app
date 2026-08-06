@@ -1,5 +1,6 @@
 package com.warden.android.data
 
+import com.warden.android.data.model.BackendsResponse
 import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.DeleteResponse
 import com.warden.android.data.model.DirListing
@@ -37,6 +38,14 @@ interface WardenApi {
     /** Built-in agent roles for the spawn-sheet picker (general first). */
     @GET("api/v1/roles")
     suspend fun listRoles(): Response<RolesResponse>
+
+    /**
+     * Available agent backends for the spawn-sheet picker (default first, then
+     * alphabetical by id). Added in warden v8.16.7; **404** on older daemons —
+     * the caller then falls back to the static [com.warden.android.data.model.Backend] list.
+     */
+    @GET("api/v1/backends")
+    suspend fun listBackends(): Response<BackendsResponse>
 
     /** Immediate subdirectories of [path] (empty = home) for the dir browser. */
     @GET("api/v1/fs/dirs")
