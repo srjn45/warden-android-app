@@ -3,6 +3,7 @@ package com.warden.android.data
 import com.warden.android.data.model.BackendInfo
 import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.DirListing
+import com.warden.android.data.model.Pipeline
 import com.warden.android.data.model.RemoveWorktreeRequest
 import com.warden.android.data.model.RoleInfo
 import com.warden.android.data.model.Session
@@ -199,6 +200,67 @@ class WardenRepository(val store: ConnectionStore) {
             Result.failure(e)
         }
     }
+
+    /** One-shot pipeline DAG snapshot for the pipelines list (init + pull-to-refresh). */
+    suspend fun listPipelines(): Result<List<Pipeline>> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = c.api.listPipelines()
+            if (resp.isSuccessful) {
+                Result.success(resp.body()?.pipelines ?: emptyList())
+            } else {
+                Result.failure(HttpStatusException(resp.code()))
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /** One pipeline (with its jobs) for the detail screen. */
+    suspend fun getPipeline(id: String): Result<Pipeline> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = c.api.getPipeline(id)
+            if (resp.isSuccessful) {
+                Result.success(resp.body() ?: Pipeline(id = id))
+            } else {
+                Result.failure(HttpStatusException(resp.code()))
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Runs a pipeline lifecycle action (start/pause/resume/cancel/delete). On a
+     * non-2xx the daemon's `{error}` message is surfaced verbatim — it carries the
+     * useful 409 guidance (e.g. "pipeline has live jobs — cancel it first").
+     */
+    private suspend fun pipelineAction(call: suspend (WardenClient) -> Response<*>): Result<Unit> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = call(c)
+            if (resp.isSuccessful) Result.success(Unit)
+            else Result.failure(Exception(errorMessage(resp)))
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /** Start a pending pipeline. */
+    suspend fun startPipeline(id: String): Result<Unit> = pipelineAction { it.api.startPipeline(id) }
+
+    /** Pause a running pipeline. */
+    suspend fun pausePipeline(id: String): Result<Unit> = pipelineAction { it.api.pausePipeline(id) }
+
+    /** Resume a paused pipeline. */
+    suspend fun resumePipeline(id: String): Result<Unit> = pipelineAction { it.api.resumePipeline(id) }
+
+    /** Cancel (terminate) a live pipeline. */
+    suspend fun cancelPipeline(id: String): Result<Unit> = pipelineAction { it.api.cancelPipeline(id) }
+
+    /** Delete a pipeline record (409 while any job is live — cancel first). */
+    suspend fun deletePipeline(id: String): Result<Unit> = pipelineAction { it.api.deletePipeline(id) }
 
     /** Lists immediate subdirectories of [path] (null/blank = home) for the browser. */
     suspend fun listDirs(path: String?): Result<DirListing> {

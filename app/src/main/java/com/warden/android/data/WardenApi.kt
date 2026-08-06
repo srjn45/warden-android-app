@@ -5,6 +5,8 @@ import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.DeleteResponse
 import com.warden.android.data.model.DirListing
 import com.warden.android.data.model.HealthResponse
+import com.warden.android.data.model.Pipeline
+import com.warden.android.data.model.PipelineList
 import com.warden.android.data.model.RemoveWorktreeRequest
 import com.warden.android.data.model.RolesResponse
 import com.warden.android.data.model.Session
@@ -13,6 +15,7 @@ import com.warden.android.data.model.SpawnRequest
 import com.warden.android.data.model.StatusResponse
 import retrofit2.Response
 import retrofit2.http.Body
+import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
@@ -50,6 +53,37 @@ interface WardenApi {
     /** Immediate subdirectories of [path] (empty = home) for the dir browser. */
     @GET("api/v1/fs/dirs")
     suspend fun listDirs(@Query("path") path: String?): Response<DirListing>
+
+    /** Pipeline DAG snapshot for the pipelines list. 200 + `{pipelines:[…]}`. */
+    @GET("api/v1/pipelines")
+    suspend fun listPipelines(): Response<PipelineList>
+
+    /** One pipeline (id, status, and its jobs) for the detail screen. 200 / 404. */
+    @GET("api/v1/pipelines/{id}")
+    suspend fun getPipeline(@Path("id") id: String): Response<Pipeline>
+
+    /** Start a pending pipeline (reconcile + spawn ready jobs). 200 / 404 / 409. */
+    @POST("api/v1/pipelines/{id}/start")
+    suspend fun startPipeline(@Path("id") id: String): Response<StatusResponse>
+
+    /** Pause a running pipeline (halt new spawns). 200 / 404 / 409. */
+    @POST("api/v1/pipelines/{id}/pause")
+    suspend fun pausePipeline(@Path("id") id: String): Response<StatusResponse>
+
+    /** Resume a paused pipeline. 200 / 404 / 409. */
+    @POST("api/v1/pipelines/{id}/resume")
+    suspend fun resumePipeline(@Path("id") id: String): Response<StatusResponse>
+
+    /** Cancel (terminate) a live pipeline: kills running jobs, skips pending. 200 / 404 / 409. */
+    @POST("api/v1/pipelines/{id}/cancel")
+    suspend fun cancelPipeline(@Path("id") id: String): Response<StatusResponse>
+
+    /**
+     * Delete a pipeline record (reaps each settled job's agent). The daemon
+     * refuses with **409** while any job is still live — cancel first. 200 / 404 / 409.
+     */
+    @DELETE("api/v1/pipelines/{id}")
+    suspend fun deletePipeline(@Path("id") id: String): Response<StatusResponse>
 
     /**
      * Spawn a new agent. 201 + [Session] on success; **428** + a

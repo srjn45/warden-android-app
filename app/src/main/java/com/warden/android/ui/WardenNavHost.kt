@@ -10,11 +10,12 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.warden.android.WardenApplication
 import com.warden.android.data.WardenRepository
-import com.warden.android.ui.agents.AgentsHome
 import com.warden.android.ui.connect.ConnectScreen
 import com.warden.android.ui.connect.ConnectViewModel
 import com.warden.android.ui.create.CreateAgentScreen
 import com.warden.android.ui.create.CreateAgentViewModel
+import com.warden.android.ui.pipelines.PipelineDetailScreen
+import com.warden.android.ui.pipelines.PipelineDetailViewModel
 import com.warden.android.ui.terminal.TerminalScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -22,16 +23,17 @@ import java.net.URLEncoder
 private object Routes {
     const val CONNECT = "connect"
     const val ADD_HOST = "add_host"
-    const val AGENTS = "agents"
+    const val HOME = "home"
     const val CREATE = "create"
     const val TERMINAL = "terminal"
+    const val PIPELINE = "pipeline"
 }
 
 @Composable
 fun WardenNavHost(repository: WardenRepository) {
     val navController = rememberNavController()
-    // Skip straight to the list if we already have a saved, active connection.
-    val start = if (repository.active != null) Routes.AGENTS else Routes.CONNECT
+    // Skip straight to the home shell if we already have a saved, active connection.
+    val start = if (repository.active != null) Routes.HOME else Routes.CONNECT
 
     NavHost(navController = navController, startDestination = start) {
         composable(Routes.CONNECT) {
@@ -39,7 +41,7 @@ fun WardenNavHost(repository: WardenRepository) {
             ConnectScreen(
                 viewModel = vm,
                 onConnected = {
-                    navController.navigate(Routes.AGENTS) {
+                    navController.navigate(Routes.HOME) {
                         popUpTo(Routes.CONNECT) { inclusive = true }
                     }
                 },
@@ -57,9 +59,9 @@ fun WardenNavHost(repository: WardenRepository) {
                 onConnected = { navController.popBackStack() },
             )
         }
-        composable(Routes.AGENTS) {
+        composable(Routes.HOME) {
             val settings = (LocalContext.current.applicationContext as WardenApplication).settings
-            AgentsHome(
+            HomeScreen(
                 repository = repository,
                 settings = settings,
                 onAgentClick = { agent ->
@@ -71,8 +73,13 @@ fun WardenNavHost(repository: WardenRepository) {
                 onAddHost = { navController.navigate(Routes.ADD_HOST) },
                 onNoConnections = {
                     navController.navigate(Routes.CONNECT) {
-                        popUpTo(Routes.AGENTS) { inclusive = true }
+                        popUpTo(Routes.HOME) { inclusive = true }
                     }
+                },
+                onPipelineClick = { pipeline ->
+                    val id = URLEncoder.encode(pipeline.id, "UTF-8")
+                    val label = URLEncoder.encode(pipeline.displayName, "UTF-8")
+                    navController.navigate("${Routes.PIPELINE}/$id/$label")
                 },
             )
         }
@@ -98,6 +105,29 @@ fun WardenNavHost(repository: WardenRepository) {
                 sessionId = id,
                 title = label,
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = "${Routes.PIPELINE}/{id}/{label}",
+            arguments = listOf(
+                navArgument("id") { type = NavType.StringType },
+                navArgument("label") { type = NavType.StringType },
+            ),
+        ) { backStackEntry ->
+            val id = URLDecoder.decode(backStackEntry.arguments?.getString("id").orEmpty(), "UTF-8")
+            val label = URLDecoder.decode(backStackEntry.arguments?.getString("label").orEmpty(), "UTF-8")
+            val vm: PipelineDetailViewModel = viewModel(
+                factory = PipelineDetailViewModel.Factory(repository, id),
+            )
+            PipelineDetailScreen(
+                viewModel = vm,
+                title = label,
+                onBack = { navController.popBackStack() },
+                onJobClick = { sessionId, jobLabel ->
+                    val sid = URLEncoder.encode(sessionId, "UTF-8")
+                    val jl = URLEncoder.encode(jobLabel, "UTF-8")
+                    navController.navigate("${Routes.TERMINAL}/$sid/$jl")
+                },
             )
         }
     }
