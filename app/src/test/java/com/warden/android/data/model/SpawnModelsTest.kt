@@ -71,4 +71,17 @@ class SpawnModelsTest {
         val ids = Backend.ALL.map { it.id }
         assertEquals("backend ids must be unique", ids.size, ids.toSet().size)
     }
+
+    @Test
+    fun `the plain-shell terminal backend is offered`() {
+        val terminal = Backend.ALL.firstOrNull { it.id == "terminal" }
+        assertEquals(Backend("terminal", "Terminal (plain shell)"), terminal)
+    }
+
+    @Test
+    fun `labelFor maps ids, defaults blank to claude, and passes unknowns through`() {
+        assertEquals("Terminal (plain shell)", Backend.labelFor("terminal"))
+        assertEquals("Claude Code", Backend.labelFor(""))
+        assertEquals("mystery", Backend.labelFor("mystery"))
+    }
 }

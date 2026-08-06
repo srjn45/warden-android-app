@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -60,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.warden.android.data.Connection
 import com.warden.android.data.displayHost
+import com.warden.android.data.model.Backend
 import com.warden.android.data.model.Session
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,6 +90,8 @@ fun AgentListScreen(
 
     // The agent pending delete confirmation (null = dialog closed).
     var pendingDelete by remember { mutableStateOf<Session?>(null) }
+    // The agent whose details sheet is open (null = closed).
+    var pendingInfo by remember { mutableStateOf<Session?>(null) }
 
     Scaffold(
         topBar = {
@@ -150,6 +156,7 @@ fun AgentListScreen(
                         agents = state.agents,
                         groupMode = state.groupMode,
                         onAgentClick = onAgentClick,
+                        onInfoClick = { pendingInfo = it },
                         onDeleteClick = { pendingDelete = it },
                     )
                 }
@@ -166,6 +173,10 @@ fun AgentListScreen(
             },
             onDismiss = { pendingDelete = null },
         )
+    }
+
+    pendingInfo?.let { target ->
+        AgentInfoDialog(agent = target, onDismiss = { pendingInfo = null })
     }
 }
 
@@ -210,6 +221,76 @@ private fun DeleteAgentDialog(
 }
 
 /**
+ * Read-only details for one agent, opened from the row's overflow menu. Shows the
+ * session fields the daemon reports (backend, model, role, repo/branch/worktree,
+ * timestamps, …), skipping any that are blank. Values are selectable so ids and
+ * paths can be copied.
+ */
+@Composable
+private fun AgentInfoDialog(agent: Session, onDismiss: () -> Unit) {
+    val rows = buildList {
+        add("Name" to agent.displayName)
+        add("ID" to agent.id)
+        add("Backend" to Backend.labelFor(agent.backend))
+        add("Status" to agent.status)
+        add("Model" to agent.model)
+        add("Role" to agent.role)
+        add("Type" to agent.type)
+        add("Repo" to agent.repo)
+        add("Branch" to agent.branch)
+        add("Worktree" to agent.worktree)
+        add("Workdir" to agent.workdir)
+        add("PR" to agent.pr)
+        add("Tags" to agent.tags.joinToString(", "))
+        add("Pipeline" to agent.pipelineId)
+        add(
+            "Context" to when {
+                agent.contextState.isBlank() && agent.contextTokens == 0 -> ""
+                agent.contextTokens > 0 ->
+                    "${agent.contextState.ifBlank { "—" }} · ${agent.contextTokens} tok"
+                else -> agent.contextState
+            },
+        )
+        add("PID" to agent.pid.takeIf { it > 0 }?.toString().orEmpty())
+        add("Exit code" to agent.exitCode?.toString().orEmpty())
+        add("Created" to agent.createdAt)
+        add("Updated" to agent.updatedAt)
+    }.filter { it.second.isNotBlank() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(agent.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        text = {
+            SelectionContainer {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    rows.forEach { (label, value) -> InfoRow(label, value) }
+                    if (agent.subject.isNotBlank()) InfoRow("Subject", agent.subject)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+    )
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(96.dp),
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/**
  * Renders the agents flat (GroupMode.None) or under collapsible group headers.
  * Order is the daemon's own — nothing here re-sorts. In tag mode an agent can
  * appear under several groups, so item keys are namespaced by the group key.
@@ -220,6 +301,7 @@ private fun AgentList(
     agents: List<Session>,
     groupMode: GroupMode,
     onAgentClick: (Session) -> Unit,
+    onInfoClick: (Session) -> Unit,
     onDeleteClick: (Session) -> Unit,
 ) {
     val groups = remember(agents, groupMode) { groupSessions(agents, groupMode) }
@@ -229,7 +311,12 @@ private fun AgentList(
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         if (groupMode == GroupMode.None) {
             items(agents, key = { it.id }) { agent ->
-                AgentRow(agent, onClick = { onAgentClick(agent) }, onDelete = { onDeleteClick(agent) })
+                AgentRow(
+                    agent,
+                    onClick = { onAgentClick(agent) },
+                    onInfo = { onInfoClick(agent) },
+                    onDelete = { onDeleteClick(agent) },
+                )
                 HorizontalDivider()
             }
         } else {
@@ -245,7 +332,12 @@ private fun AgentList(
                 }
                 if (!isCollapsed) {
                     items(group.sessions, key = { "${group.key}:${it.id}" }) { agent ->
-                        AgentRow(agent, onClick = { onAgentClick(agent) }, onDelete = { onDeleteClick(agent) })
+                        AgentRow(
+                            agent,
+                            onClick = { onAgentClick(agent) },
+                            onInfo = { onInfoClick(agent) },
+                            onDelete = { onDeleteClick(agent) },
+                        )
                         HorizontalDivider()
                     }
                 }
@@ -318,7 +410,7 @@ private fun GroupHeader(
 }
 
 @Composable
-private fun AgentRow(agent: Session, onClick: () -> Unit, onDelete: () -> Unit) {
+private fun AgentRow(agent: Session, onClick: () -> Unit, onInfo: () -> Unit, onDelete: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -335,7 +427,7 @@ private fun AgentRow(agent: Session, onClick: () -> Unit, onDelete: () -> Unit) 
             )
             Spacer(Modifier.width(8.dp))
             StatusBadge(agent.status)
-            RowOverflowMenu(onDelete = onDelete)
+            RowOverflowMenu(onInfo = onInfo, onDelete = onDelete)
         }
 
         if (agent.subject.isNotBlank()) {
@@ -357,6 +449,8 @@ private fun AgentRow(agent: Session, onClick: () -> Unit, onDelete: () -> Unit) 
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            Spacer(Modifier.width(10.dp))
+            BackendBadge(agent.backend)
             if (agent.model.isNotBlank()) {
                 Spacer(Modifier.width(10.dp))
                 Text(
@@ -372,7 +466,7 @@ private fun AgentRow(agent: Session, onClick: () -> Unit, onDelete: () -> Unit) 
 }
 
 @Composable
-private fun RowOverflowMenu(onDelete: () -> Unit) {
+private fun RowOverflowMenu(onInfo: () -> Unit, onDelete: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
@@ -383,6 +477,14 @@ private fun RowOverflowMenu(onDelete: () -> Unit) {
             )
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Agent info") },
+                leadingIcon = { Icon(Icons.Outlined.Info, contentDescription = null) },
+                onClick = {
+                    expanded = false
+                    onInfo()
+                },
+            )
             DropdownMenuItem(
                 text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
                 onClick = {

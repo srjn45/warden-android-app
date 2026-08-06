@@ -1,6 +1,7 @@
 package com.warden.android.ui.agents
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -9,7 +10,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.warden.android.data.model.Backend
 import com.warden.android.data.model.ContextState
 import com.warden.android.data.model.Status
 
@@ -38,6 +41,26 @@ fun StatusBadge(status: String, modifier: Modifier = Modifier) {
         modifier = modifier
             .clip(RoundedCornerShape(6.dp))
             .background(style.color)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    )
+}
+
+/**
+ * Outlined chip naming the agent's backend (e.g. "Terminal (plain shell)"). Kept
+ * subtle — an outline rather than a fill — so it reads as metadata beside the
+ * filled status badge. A blank backend is the daemon's default (claude).
+ */
+@Composable
+fun BackendBadge(backend: String, modifier: Modifier = Modifier) {
+    Text(
+        text = Backend.labelFor(backend),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.labelSmall,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier
+            .clip(RoundedCornerShape(6.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
             .padding(horizontal = 8.dp, vertical = 3.dp),
     )
 }

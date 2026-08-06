@@ -6,7 +6,8 @@ package com.warden.android.data.model
  *
  * The daemon has no `/backends` endpoint, so this list is a static mirror of its
  * backend registry (the `internal/agentbackend/backends` package — each
- * backend's `ID()` and `DisplayName()`). It can drift if warden adds a backend;
+ * backend's `ID()` and `DisplayName()`, including the plain-shell `terminal`
+ * backend). It can drift if warden adds a backend;
  * a future `GET /api/v1/backends` would make it self-updating. [DEFAULT]
  * ("claude") is what the daemon assumes for an empty backend, so it leads the list.
  */
@@ -24,6 +25,17 @@ data class Backend(val id: String, val label: String) {
             Backend("cursor", "Cursor"),
             Backend("goose", "Goose"),
             Backend("opencode", "OpenCode"),
+            Backend("terminal", "Terminal (plain shell)"),
         )
+
+        /**
+         * Display label for a backend [id] as it appears on a session. Falls back
+         * to the raw id for backends this build doesn't know, and treats a blank
+         * id as [DEFAULT] (the daemon's default for an empty backend).
+         */
+        fun labelFor(id: String): String {
+            val key = id.ifBlank { DEFAULT.id }
+            return ALL.firstOrNull { it.id == key }?.label ?: key
+        }
     }
 }
