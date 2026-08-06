@@ -23,6 +23,8 @@ data class AgentListUiState(
     val hostLabel: String = "",
     val groupMode: GroupMode = GroupMode.None,
     val error: String? = null,
+    /** Transient one-shot text for the snackbar (delete result / failure). */
+    val message: String? = null,
 )
 
 class AgentListViewModel(
@@ -94,6 +96,30 @@ class AgentListViewModel(
         settings.groupModeId = mode.id
         _state.update { it.copy(groupMode = mode) }
     }
+
+    /**
+     * Terminate + delete [session] (optionally removing its worktree). The row
+     * vanishes from the list on the next SSE snapshot; here we only report the
+     * outcome — a server warning or a failure — via the transient [message].
+     */
+    fun deleteAgent(session: Session, removeWorktree: Boolean) {
+        viewModelScope.launch {
+            repo.deleteAgent(session.id, removeWorktree)
+                .onSuccess { warning ->
+                    _state.update {
+                        it.copy(message = warning ?: "Deleted ${session.displayName}")
+                    }
+                }
+                .onFailure { e ->
+                    _state.update {
+                        it.copy(message = "Delete failed: ${e.message ?: "unknown error"}")
+                    }
+                }
+        }
+    }
+
+    /** Acknowledge the transient snackbar message. */
+    fun clearMessage() = _state.update { it.copy(message = null) }
 
     /** Manual reconnect for the Disconnected state. */
     fun reconnect() {

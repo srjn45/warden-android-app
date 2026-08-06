@@ -256,8 +256,8 @@ None are required for MVP, but worth noting:
 - **P1 — Terminal.** ✅ **Built** (data path verified; on-device render pending an
   emulator). Termux emulator + WS binary bridge + resize + key bar against
   `…/attach`. See §8.2 for the as-built architecture.
-- **P2 — Create / delete.** Spawn sheet (backend/dir/role/prompt, `428` handling)
-  + terminate/delete.
+- **P2 — Create / delete.** ✅ **Built.** Spawn sheet (backend/dir/role/prompt,
+  `428` handling) + terminate/delete. See §8.3 for the as-built notes.
 - **P3 — Raw host terminal** via `…/cockpit/attach`, and quick-prompt `/input`.
 - **P4 — Polish.** Multiple saved hosts, QR pairing, reconnect/backoff.
 
@@ -342,6 +342,47 @@ remote stream — no fork, no vendoring.**
   socket to a live session and asserts it reaches `Attached` — it sends no input
   and no resize, so attached agents are undisturbed. On-device glyph rendering is
   still unverified (no emulator/AVD on the host).
+
+### 8.3 P2 implementation notes (as built)
+
+Create + delete, mapped onto existing REST endpoints — **no daemon changes.**
+
+- **Create (`POST /spawn`).** A `CreateAgentScreen` reachable from the list's `+`
+  FAB. Fields: backend, working directory, name, role, model, initial prompt — all
+  optional, free-form spawn (empty `type`). `SpawnRequest` is serialized by
+  `WardenJson` (which does **not** encode defaults), so blank fields and
+  `force=false` are omitted and the daemon applies its own defaults (empty backend
+  = claude, absent cwd = home). On success (201) the sheet pops; the new agent
+  appears via the live list.
+- **The `428` spawn gate.** When the memory-pressure gate warns, `/spawn` returns
+  `428` + a `ConfirmationResponse`. The body arrives via Retrofit's `errorBody()`;
+  `WardenRepository.spawn` parses it and returns `SpawnOutcome.NeedsConfirmation`
+  carrying the `Verdict`. The UI shows a "spawn anyway?" dialog (with the verdict's
+  reason) that re-submits the identical request with `force = true`. The three
+  outcomes — `Created` / `NeedsConfirmation` / `Failed(message)` — are a sealed
+  type so the ViewModel handles each explicitly.
+- **Working-dir browser.** A `ModalBottomSheet` driven by `GET /fs/dirs?path=` —
+  no local filesystem access. Starts at the current cwd (or the daemon's home when
+  blank), descends into `DirEntry` rows, walks up via the listing's `parent`
+  (hidden at the fs root), and "Use this folder" picks the listing's `path`.
+- **Backend picker.** The daemon has no `/backends` endpoint, so `Backend.ALL` is a
+  static mirror of its backend registry (claude, aider, antigravity, codex, crush,
+  cursor, goose, opencode), claude first. A future `GET /api/v1/backends` would
+  make it self-updating. The **role** picker, by contrast, is live off `GET /roles`.
+- **Delete.** A per-row overflow (⋮ → Delete) on the list and a Terminate/Delete
+  overflow on the terminal screen. Delete runs `terminate` (best-effort — a 404 or
+  already-dead agent is fine) → optional `remove-worktree` → `delete`, in that
+  order so the tmux session is killed before the record is dropped. Any non-blank
+  server warning (e.g. "may still be live") surfaces in a snackbar. The confirm
+  dialog offers "also remove the git worktree & branch" only when the agent has a
+  worktree. The row vanishes on the next SSE snapshot.
+- **Verification.** Unit tests cover the spawn-request serialization contract
+  (defaults omitted, `force` only when true), the `428`/delete body decoding, and
+  the backend registry. The live integration test gained **read-only** checks for
+  `GET /roles` and `GET /fs/dirs`. Spawn and delete are deliberately **never**
+  exercised by automated tests — they mutate a real fleet — so those write paths
+  are covered by the typed transport + manual use only. On-device rendering still
+  pending an emulator/AVD.
 
 ---
 

@@ -17,24 +17,37 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,8 +62,21 @@ import com.warden.android.data.model.Session
 fun AgentListScreen(
     viewModel: AgentListViewModel,
     onAgentClick: (Session) -> Unit = {},
+    onCreateClick: () -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Surface delete results / failures, then acknowledge so they don't repeat.
+    LaunchedEffect(state.message) {
+        state.message?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearMessage()
+        }
+    }
+
+    // The agent pending delete confirmation (null = dialog closed).
+    var pendingDelete by remember { mutableStateOf<Session?>(null) }
 
     Scaffold(
         topBar = {
@@ -69,6 +95,12 @@ fun AgentListScreen(
                 },
                 actions = { StreamIndicator(state.stream) },
             )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = onCreateClick) {
+                Icon(Icons.Filled.Add, contentDescription = "New agent")
+            }
         },
     ) { padding ->
         Column(
@@ -108,11 +140,63 @@ fun AgentListScreen(
                         agents = state.agents,
                         groupMode = state.groupMode,
                         onAgentClick = onAgentClick,
+                        onDeleteClick = { pendingDelete = it },
                     )
                 }
             }
         }
     }
+
+    pendingDelete?.let { target ->
+        DeleteAgentDialog(
+            agent = target,
+            onConfirm = { removeWorktree ->
+                viewModel.deleteAgent(target, removeWorktree)
+                pendingDelete = null
+            },
+            onDismiss = { pendingDelete = null },
+        )
+    }
+}
+
+@Composable
+private fun DeleteAgentDialog(
+    agent: Session,
+    onConfirm: (removeWorktree: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var removeWorktree by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete ${agent.displayName}?") },
+        text = {
+            Column {
+                Text("This terminates the agent and removes its record. This can't be undone.")
+                if (agent.worktree.isNotBlank()) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { removeWorktree = !removeWorktree },
+                    ) {
+                        Checkbox(checked = removeWorktree, onCheckedChange = { removeWorktree = it })
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Also remove the git worktree & branch",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(removeWorktree) }) {
+                Text("Delete", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /**
@@ -126,6 +210,7 @@ private fun AgentList(
     agents: List<Session>,
     groupMode: GroupMode,
     onAgentClick: (Session) -> Unit,
+    onDeleteClick: (Session) -> Unit,
 ) {
     val groups = remember(agents, groupMode) { groupSessions(agents, groupMode) }
     // Collapsed group keys; reset whenever the grouping dimension changes.
@@ -134,7 +219,7 @@ private fun AgentList(
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         if (groupMode == GroupMode.None) {
             items(agents, key = { it.id }) { agent ->
-                AgentRow(agent, onClick = { onAgentClick(agent) })
+                AgentRow(agent, onClick = { onAgentClick(agent) }, onDelete = { onDeleteClick(agent) })
                 HorizontalDivider()
             }
         } else {
@@ -150,7 +235,7 @@ private fun AgentList(
                 }
                 if (!isCollapsed) {
                     items(group.sessions, key = { "${group.key}:${it.id}" }) { agent ->
-                        AgentRow(agent, onClick = { onAgentClick(agent) })
+                        AgentRow(agent, onClick = { onAgentClick(agent) }, onDelete = { onDeleteClick(agent) })
                         HorizontalDivider()
                     }
                 }
@@ -223,12 +308,12 @@ private fun GroupHeader(
 }
 
 @Composable
-private fun AgentRow(agent: Session, onClick: () -> Unit) {
+private fun AgentRow(agent: Session, onClick: () -> Unit, onDelete: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -240,6 +325,7 @@ private fun AgentRow(agent: Session, onClick: () -> Unit) {
             )
             Spacer(Modifier.width(8.dp))
             StatusBadge(agent.status)
+            RowOverflowMenu(onDelete = onDelete)
         }
 
         if (agent.subject.isNotBlank()) {
@@ -271,6 +357,29 @@ private fun AgentRow(agent: Session, onClick: () -> Unit) {
             }
             Spacer(Modifier.weight(1f))
             ContextBadge(agent.contextState)
+        }
+    }
+}
+
+@Composable
+private fun RowOverflowMenu(onDelete: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "More actions",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                onClick = {
+                    expanded = false
+                    onDelete()
+                },
+            )
         }
     }
 }

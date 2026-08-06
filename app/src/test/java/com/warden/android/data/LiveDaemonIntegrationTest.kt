@@ -56,6 +56,32 @@ class LiveDaemonIntegrationTest {
             body.sessions.joinToString { "${it.displayName}(${it.status})" })
     }
 
+    /** The spawn-sheet role picker source (`GET /roles`) — read-only. */
+    @Test
+    fun rolesList() = runBlocking {
+        assumeTrue("set WARDEN_TEST_BASE_URL + WARDEN_TEST_TOKEN to run", baseUrlRaw != null && token != null)
+        val resp = client().api.listRoles()
+        assertTrue("roles should be 200, got ${resp.code()}", resp.isSuccessful)
+        val roles = resp.body()?.roles ?: emptyList()
+        // The daemon documents "general first, then alphabetical"; at minimum it
+        // returns the built-ins, each with a name.
+        roles.forEach { assertTrue("role name should be non-blank", it.name.isNotBlank()) }
+        println("[live] roles ok — ${roles.size} role(s): ${roles.joinToString { it.name }}")
+    }
+
+    /** The spawn-sheet working-dir browser source (`GET /fs/dirs`) — read-only. */
+    @Test
+    fun dirsList() = runBlocking {
+        assumeTrue("set WARDEN_TEST_BASE_URL + WARDEN_TEST_TOKEN to run", baseUrlRaw != null && token != null)
+        // Empty path = the user's home directory.
+        val resp = client().api.listDirs(null)
+        assertTrue("fs/dirs should be 200, got ${resp.code()}", resp.isSuccessful)
+        val listing = resp.body()
+        assertNotNull("dir listing should decode", listing)
+        listing!!.entries.forEach { assertTrue(it.path.isNotBlank()) }
+        println("[live] fs/dirs ok — home has ${listing.entries.size} subdir(s)")
+    }
+
     @Test
     fun sseFirstSnapshot() = runBlocking {
         assumeTrue("set WARDEN_TEST_BASE_URL + WARDEN_TEST_TOKEN to run", baseUrlRaw != null && token != null)

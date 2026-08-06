@@ -5,14 +5,17 @@ fleet of coding agents from a phone. The warden web UI is awkward on mobile; thi
 app is a native, terminal-first client that talks directly to the warden daemon's
 remote API (LAN, Tailscale, or Cloudflare tunnel).
 
-> **Status: P1 built.** Connect + live SSE-driven agent list (P0), plus an
-> interactive **terminal** (P1): tap an agent to attach to its tmux PTY over a
-> binary WebSocket, with a soft-keyboard-friendly extra-keys bar and resize. The
-> terminal reuses Termux's emulator + renderer driven from the remote stream (no
-> local subprocess, no fork). The whole data path — REST, SSE, and WS attach — is
-> verified end-to-end against a running daemon; on-device glyph rendering awaits
-> an emulator/AVD. See [`docs/design.md`](docs/design.md) for the full spec and
-> the as-built notes (§8.1 P0, §8.2 P1).
+> **Status: P2 built.** Connect + live SSE-driven agent list (P0); an interactive
+> **terminal** (P1) — tap an agent to attach to its tmux PTY over a binary
+> WebSocket, with a soft-keyboard-friendly extra-keys bar and resize, reusing
+> Termux's emulator + renderer driven from the remote stream (no local subprocess,
+> no fork); and **create / delete agents** (P2) — a spawn sheet (backend, working-
+> dir browser via `GET /fs/dirs`, role, model, prompt) with memory-pressure `428`
+> "spawn anyway" handling, plus terminate/delete from the list and terminal. The
+> whole data path — REST, SSE, WS attach, and the roles/dirs pickers — is verified
+> end-to-end against a running daemon; on-device glyph rendering awaits an
+> emulator/AVD. See [`docs/design.md`](docs/design.md) for the full spec and the
+> as-built notes (§8.1 P0, §8.2 P1, §8.3 P2).
 >
 > **Build:** `./gradlew :app:assembleDebug` (Android SDK with the `android-36`
 > platform + JDK 17 required).

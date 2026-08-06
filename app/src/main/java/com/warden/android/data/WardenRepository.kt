@@ -1,10 +1,18 @@
 package com.warden.android.data
 
+import com.warden.android.data.model.DeleteRequest
+import com.warden.android.data.model.DirListing
+import com.warden.android.data.model.RemoveWorktreeRequest
+import com.warden.android.data.model.RoleInfo
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.SessionList
+import com.warden.android.data.model.SpawnRequest
+import com.warden.android.data.model.Verdict
 import com.warden.android.data.terminal.TerminalListener
 import com.warden.android.data.terminal.TerminalTransport
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.Serializable
+import retrofit2.Response
 import java.io.IOException
 
 /** Outcome of the Connect screen's "Test connection" probe. */
@@ -109,5 +117,128 @@ class WardenRepository(val store: ConnectionStore) {
         return c.openTerminal(sessionId, listener)
     }
 
+    /** Built-in agent roles for the spawn-sheet picker. */
+    suspend fun listRoles(): Result<List<RoleInfo>> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = c.api.listRoles()
+            if (resp.isSuccessful) {
+                Result.success(resp.body()?.roles ?: emptyList())
+            } else {
+                Result.failure(HttpStatusException(resp.code()))
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /** Lists immediate subdirectories of [path] (null/blank = home) for the browser. */
+    suspend fun listDirs(path: String?): Result<DirListing> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = c.api.listDirs(path?.ifBlank { null })
+            if (resp.isSuccessful) {
+                Result.success(resp.body() ?: DirListing())
+            } else {
+                Result.failure(HttpStatusException(resp.code()))
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Spawns an agent. Maps the daemon's three outcomes to [SpawnOutcome]:
+     * 201 → [SpawnOutcome.Created]; 428 (spawn-gate warning) →
+     * [SpawnOutcome.NeedsConfirmation] carrying the [Verdict] to show in the
+     * "spawn anyway?" prompt; anything else (400, network) → [SpawnOutcome.Failed]
+     * with a message. Re-submit with `req.copy(force = true)` to clear a 428.
+     */
+    suspend fun spawn(req: SpawnRequest): SpawnOutcome {
+        val c = client ?: return SpawnOutcome.Failed("No active connection")
+        return try {
+            val resp = c.api.spawn(req)
+            when {
+                resp.isSuccessful -> {
+                    val session = resp.body()
+                        ?: return SpawnOutcome.Failed("Spawn returned an empty body")
+                    SpawnOutcome.Created(session)
+                }
+                resp.code() == 428 -> {
+                    val conf = resp.errorBody()?.string()?.let { raw ->
+                        runCatching { WardenJson.decodeFromString<com.warden.android.data.model.ConfirmationResponse>(raw) }
+                            .getOrNull()
+                    }
+                    SpawnOutcome.NeedsConfirmation(conf?.verdict ?: Verdict())
+                }
+                else -> SpawnOutcome.Failed(errorMessage(resp))
+            }
+        } catch (e: IOException) {
+            SpawnOutcome.Failed(e.message ?: "Network error")
+        }
+    }
+
+    /** Kills an agent's tmux session but keeps its record + worktree. */
+    suspend fun terminateAgent(id: String): Result<Unit> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = c.api.terminate(id)
+            if (resp.isSuccessful) Result.success(Unit)
+            else Result.failure(HttpStatusException(resp.code()))
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Deletes an agent: terminate (best-effort — a 404 or already-dead agent is
+     * fine) then delete the record, optionally removing the worktree first. The
+     * order matters: killing the tmux session before dropping the record avoids
+     * orphaning a live process. Returns any non-blank server warning (e.g. "the
+     * agent may still be live") so the UI can surface it.
+     */
+    suspend fun deleteAgent(id: String, removeWorktree: Boolean): Result<String?> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            // Best-effort terminate; ignore its status (404 = already gone).
+            runCatching { c.api.terminate(id) }
+            if (removeWorktree) {
+                runCatching { c.api.removeWorktree(id, RemoveWorktreeRequest(force = true)) }
+            }
+            val resp = c.api.delete(id, DeleteRequest())
+            if (resp.isSuccessful) {
+                Result.success(resp.body()?.warning?.ifBlank { null })
+            } else {
+                Result.failure(HttpStatusException(resp.code()))
+            }
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
+    /** Extracts the daemon's `{error}` message from a failed response, else HTTP code. */
+    private fun errorMessage(resp: Response<*>): String {
+        val raw = runCatching { resp.errorBody()?.string() }.getOrNull()
+        val parsed = raw?.let {
+            runCatching { WardenJson.decodeFromString<ErrorBody>(it) }.getOrNull()
+        }
+        return parsed?.error?.ifBlank { null } ?: "HTTP ${resp.code()}"
+    }
+
+    @Serializable
+    private data class ErrorBody(val error: String = "")
+
     class HttpStatusException(val code: Int) : Exception("HTTP $code")
+}
+
+/** Result of a spawn attempt (see [WardenRepository.spawn]). */
+sealed interface SpawnOutcome {
+    /** 201 — the agent was created. */
+    data class Created(val session: Session) : SpawnOutcome
+
+    /** 428 — the memory-pressure gate wants confirmation; resend with force. */
+    data class NeedsConfirmation(val verdict: Verdict) : SpawnOutcome
+
+    /** 400 / network / empty body — [message] is user-facing. */
+    data class Failed(val message: String) : SpawnOutcome
 }

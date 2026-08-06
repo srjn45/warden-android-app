@@ -12,7 +12,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -27,6 +31,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +44,7 @@ import com.warden.android.data.WardenRepository
 import com.warden.android.data.terminal.TerminalState
 import com.warden.android.terminal.RemoteTerminalView
 import com.warden.android.terminal.TerminalController
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -49,7 +55,9 @@ fun TerminalScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var state by remember(sessionId) { mutableStateOf<TerminalState>(TerminalState.Connecting) }
+    var confirmDelete by remember(sessionId) { mutableStateOf(false) }
 
     val controller = remember(sessionId) { TerminalController(repository, sessionId) }
     val terminalView = remember(sessionId) {
@@ -84,6 +92,15 @@ fun TerminalScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    TerminalOverflowMenu(
+                        onTerminate = {
+                            // Kills the tmux session; the socket then drops to Detached.
+                            scope.launch { repository.terminateAgent(sessionId) }
+                        },
+                        onDelete = { confirmDelete = true },
+                    )
+                },
             )
         },
         bottomBar = { KeyBar(terminalView) },
@@ -113,6 +130,50 @@ fun TerminalScreen(
                 TerminalState.Attached -> Unit // live terminal shows through
             }
         }
+    }
+
+    if (confirmDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text("Delete $title?") },
+            text = { Text("This terminates the agent and removes its record. This can't be undone.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmDelete = false
+                    scope.launch {
+                        repository.deleteAgent(sessionId, removeWorktree = false)
+                        onBack()
+                    }
+                }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun TerminalOverflowMenu(onTerminate: () -> Unit, onDelete: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    IconButton(onClick = { expanded = true }) {
+        Icon(Icons.Filled.MoreVert, contentDescription = "More actions")
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        DropdownMenuItem(
+            text = { Text("Terminate") },
+            onClick = {
+                expanded = false
+                onTerminate()
+            },
+        )
+        DropdownMenuItem(
+            text = { Text("Delete agent", color = MaterialTheme.colorScheme.error) },
+            onClick = {
+                expanded = false
+                onDelete()
+            },
+        )
     }
 }
 

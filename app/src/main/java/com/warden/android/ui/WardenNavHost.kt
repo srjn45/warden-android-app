@@ -14,6 +14,8 @@ import com.warden.android.ui.agents.AgentListScreen
 import com.warden.android.ui.agents.AgentListViewModel
 import com.warden.android.ui.connect.ConnectScreen
 import com.warden.android.ui.connect.ConnectViewModel
+import com.warden.android.ui.create.CreateAgentScreen
+import com.warden.android.ui.create.CreateAgentViewModel
 import com.warden.android.ui.terminal.TerminalScreen
 import java.net.URLDecoder
 import java.net.URLEncoder
@@ -21,6 +23,7 @@ import java.net.URLEncoder
 private object Routes {
     const val CONNECT = "connect"
     const val AGENTS = "agents"
+    const val CREATE = "create"
     const val TERMINAL = "terminal"
 }
 
@@ -57,6 +60,15 @@ fun WardenNavHost(repository: WardenRepository) {
                     val label = URLEncoder.encode(agent.displayName, "UTF-8")
                     navController.navigate("${Routes.TERMINAL}/$id/$label")
                 },
+                onCreateClick = { navController.navigate(Routes.CREATE) },
+            )
+        }
+        composable(Routes.CREATE) {
+            val vm: CreateAgentViewModel = viewModel(factory = CreateAgentViewModel.Factory(repository))
+            CreateAgentScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onCreated = { navController.popBackStack() },
             )
         }
         composable(
