@@ -116,6 +116,11 @@ jobs:
           cp app/build/outputs/bundle/release/app-release.aab "$AAB_NAME"
           echo "APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
           echo "AAB_NAME=$AAB_NAME" >> "$GITHUB_ENV"
+          # Stable-named copy so the website can link a durable URL that always
+          # resolves to the newest build: /releases/latest/download/warden-latest.apk
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            cp "$APK_NAME" warden-latest.apk
+          fi
           ls -lh "$APK_NAME" "$AAB_NAME"
 
       # Tag push → publish a GitHub Release with the APK (sideload) + AAB (Play upload).
@@ -127,6 +132,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             "./$APK_NAME" \
             "./$AAB_NAME" \
+            "./warden-latest.apk" \
             --repo "${{ github.repository }}" \
             --title "Warden $GITHUB_REF_NAME" \
             --generate-notes
