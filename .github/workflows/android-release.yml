@@ -79,13 +79,15 @@ jobs:
           # safe ever-increasing versionCode (gaps are fine).
           echo "APP_VERSION_CODE=${GITHUB_RUN_NUMBER}" >> "$GITHUB_ENV"
 
-      - name: Run unit tests and assemble signed release APK
+      - name: Run unit tests and build signed release APK + AAB
         env:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace \
+          # assembleRelease → APK for GitHub-release sideloading.
+          # bundleRelease  → AAB, the format the Play Store requires for uploads.
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease :app:bundleRelease --no-daemon --stacktrace \
             -PappVersionName="$APP_VERSION_NAME" \
             -PappVersionCode="$APP_VERSION_CODE"
 
@@ -101,18 +103,22 @@ jobs:
             exit 1
           fi
 
-      - name: Stage versioned APK
+      - name: Stage versioned APK + AAB
         run: |
           if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
-            APK_NAME="warden-${GITHUB_REF_NAME}.apk"
+            STEM="warden-${GITHUB_REF_NAME}"
           else
-            APK_NAME="warden-${GITHUB_SHA::7}.apk"
+            STEM="warden-${GITHUB_SHA::7}"
           fi
+          APK_NAME="${STEM}.apk"
+          AAB_NAME="${STEM}.aab"
           cp app/build/outputs/apk/release/app-release.apk "$APK_NAME"
+          cp app/build/outputs/bundle/release/app-release.aab "$AAB_NAME"
           echo "APK_NAME=$APK_NAME" >> "$GITHUB_ENV"
-          ls -lh "$APK_NAME"
+          echo "AAB_NAME=$AAB_NAME" >> "$GITHUB_ENV"
+          ls -lh "$APK_NAME" "$AAB_NAME"
 
-      # Tag push → publish a GitHub Release with the APK attached.
+      # Tag push → publish a GitHub Release with the APK (sideload) + AAB (Play upload).
       - name: Create GitHub Release
         if: github.ref_type == 'tag'
         env:
@@ -120,15 +126,18 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "./$APK_NAME" \
+            "./$AAB_NAME" \
             --repo "${{ github.repository }}" \
             --title "Warden $GITHUB_REF_NAME" \
             --generate-notes
 
-      # Manual run (no tag) → keep the APK as a run artifact instead.
-      - name: Upload APK artifact
+      # Manual run (no tag) → keep the APK + AAB as run artifacts instead.
+      - name: Upload APK + AAB artifacts
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APK_NAME }}
-          path: ${{ env.APK_NAME }}
+          name: warden-release-artifacts
+          path: |
+            ${{ env.APK_NAME }}
+            ${{ env.AAB_NAME }}
           if-no-files-found: error

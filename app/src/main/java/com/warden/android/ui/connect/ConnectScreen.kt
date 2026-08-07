@@ -13,9 +13,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
@@ -124,6 +126,25 @@ fun ConnectScreen(
 
         Spacer(Modifier.height(16.dp))
         StatusLine(state.test)
+
+        Spacer(Modifier.height(28.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(20.dp))
+
+        OutlinedButton(
+            onClick = { viewModel.tryDemo(onConnected) },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text("Try the demo")
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "No daemon yet? The demo loads sample agents and pipelines so " +
+                "you can look around — no server needed. Set up your own daemon at " +
+                "github.com/srjn45/warden.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

@@ -27,7 +27,7 @@ import java.util.concurrent.TimeUnit
  * SSE/WS auth must be a `?token=` query param because a browser-style
  * `EventSource`/WS upgrade cannot set headers (design.md §3).
  */
-class WardenClient(private val connection: Connection) {
+class WardenClient(private val connection: Connection) : WardenTransport {
 
     private val httpClient: OkHttpClient = OkHttpClient.Builder()
         .addInterceptor(BearerInterceptor(connection.token))
@@ -44,7 +44,7 @@ class WardenClient(private val connection: Connection) {
         .addConverterFactory(WardenJson.asConverterFactory("application/json".toMediaType()))
         .build()
 
-    val api: WardenApi = retrofit.create(WardenApi::class.java)
+    override val api: WardenApi = retrofit.create(WardenApi::class.java)
 
     /**
      * Subscribes to `GET /api/v1/events/stream`. Each SSE `data:` frame is a
@@ -55,7 +55,7 @@ class WardenClient(private val connection: Connection) {
      * The flow completes on a clean stream end and propagates failures so the
      * caller can show a disconnected state and retry.
      */
-    fun sessionStream(): Flow<SessionList> = callbackFlow {
+    override fun sessionStream(): Flow<SessionList> = callbackFlow {
         val url = connection.baseUrl.trimEnd('/') +
             "/api/v1/events/stream?token=" + connection.token
 
@@ -98,7 +98,7 @@ class WardenClient(private val connection: Connection) {
      * WS keepalive rides the same `pingInterval` as SSE. Auth is the `?token=`
      * query param (WS upgrades can't carry the bearer header — design.md §3).
      */
-    fun openTerminal(sessionId: String, listener: TerminalListener): TerminalTransport {
+    override fun openTerminal(sessionId: String, listener: TerminalListener): TerminalTransport {
         val url = connection.baseUrl.trimEnd('/') +
             "/api/v1/sessions/" + sessionId + "/attach?token=" + connection.token
         return WsTerminalTransport(httpClient, url, listener)

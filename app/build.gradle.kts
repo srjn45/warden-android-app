@@ -12,7 +12,10 @@ android {
     defaultConfig {
         applicationId = "com.warden.android"
         minSdk = 26
-        targetSdk = 34
+        // API 35 (Android 15) is the Play Store floor for new apps / updates as
+        // of Aug 2025. enableEdgeToEdge() is already called in MainActivity, so
+        // the edge-to-edge enforcement that ships with 35 is already handled.
+        targetSdk = 35
         // Bumped for the v0.2.1 signed release (P0/P1/P2 shipped as versionCode 1
         // by mistake). CI overrides these from the git tag; see the -P defaults.
         versionCode = (project.findProperty("appVersionCode") as String?)?.toInt() ?: 2

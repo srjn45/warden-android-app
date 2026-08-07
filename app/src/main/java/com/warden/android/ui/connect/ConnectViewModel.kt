@@ -47,6 +47,16 @@ class ConnectViewModel(
         }
     }
 
+    /**
+     * Enters the built-in offline demo — sample agents and pipelines with no
+     * daemon or network. Used to look around before setting up a server (and by
+     * Play Store review, which has no daemon to point at).
+     */
+    fun tryDemo(onConnected: () -> Unit) {
+        repo.activateDemo()
+        onConnected()
+    }
+
     fun onHostChange(value: String) = _state.update { it.copy(host = value, test = TestState.Idle) }
 
     fun onTokenChange(value: String) = _state.update { it.copy(token = value, test = TestState.Idle) }

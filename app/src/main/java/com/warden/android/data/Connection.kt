@@ -13,7 +13,20 @@ data class Connection(
     val baseUrl: String,
     val token: String,
 ) {
+    /**
+     * True for the built-in offline demo host. The repository routes this to
+     * [com.warden.android.data.demo.DemoTransport] (fixtures) instead of a real
+     * Retrofit/SSE client, so the app can be explored with no daemon.
+     */
+    val isDemo: Boolean get() = baseUrl == DEMO_BASE_URL
+
     companion object {
+        /** Sentinel base URL of the offline demo host (never hits Retrofit). */
+        const val DEMO_BASE_URL = "demo://warden"
+
+        /** The offline demo host, shown as "Demo" in the host picker. */
+        fun demo(): Connection = Connection(label = "Demo", baseUrl = DEMO_BASE_URL, token = "demo")
+
         /**
          * Normalizes user input into a canonical base URL:
          *  - prepends `http://` when no scheme is given,

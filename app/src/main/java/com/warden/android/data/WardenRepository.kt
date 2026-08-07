@@ -10,6 +10,7 @@ import com.warden.android.data.model.Session
 import com.warden.android.data.model.SessionList
 import com.warden.android.data.model.SpawnRequest
 import com.warden.android.data.model.Verdict
+import com.warden.android.data.demo.DemoTransport
 import com.warden.android.data.terminal.TerminalListener
 import com.warden.android.data.terminal.TerminalTransport
 import kotlinx.coroutines.flow.Flow
@@ -49,11 +50,21 @@ data class HostsState(
 class WardenRepository(val store: ConnectionStore) {
 
     @Volatile
-    private var client: WardenClient? = null
+    private var client: WardenTransport? = null
 
     @Volatile
     var active: Connection? = store.active()
         private set
+
+    /** True when the active host is the built-in offline demo (fixture-backed). */
+    val isDemo: Boolean get() = active?.isDemo == true
+
+    /**
+     * Builds the transport for [connection]: fixture-backed [DemoTransport] for
+     * the demo host, otherwise a real Retrofit/SSE [WardenClient].
+     */
+    private fun newTransport(connection: Connection): WardenTransport =
+        if (connection.isDemo) DemoTransport() else WardenClient(connection)
 
     /**
      * Reactive snapshot of all saved hosts and which one is active, so the host
@@ -65,7 +76,7 @@ class WardenRepository(val store: ConnectionStore) {
     val hosts: StateFlow<HostsState> = _hosts.asStateFlow()
 
     init {
-        active?.let { client = WardenClient(it) }
+        active?.let { client = newTransport(it) }
     }
 
     private fun refreshHosts() {
@@ -76,9 +87,17 @@ class WardenRepository(val store: ConnectionStore) {
     fun activate(connection: Connection) {
         store.upsertAndActivate(connection)
         active = connection
-        client = WardenClient(connection)
+        client = newTransport(connection)
         refreshHosts()
     }
+
+    /**
+     * Activates the built-in offline **demo** host: canned fixtures with no
+     * network, so the app can be explored (and Play Store review can exercise it)
+     * without a warden daemon. Persisted like any host, so it survives relaunch
+     * until forgotten from the host drawer.
+     */
+    fun activateDemo() = activate(Connection.demo())
 
     /**
      * Switches the foreground host to an already-saved connection (by [label]).
@@ -90,7 +109,7 @@ class WardenRepository(val store: ConnectionStore) {
         if (target.label == active?.label) return
         store.setActive(label)
         active = target
-        client = WardenClient(target)
+        client = newTransport(target)
         refreshHosts()
     }
 
@@ -101,7 +120,7 @@ class WardenRepository(val store: ConnectionStore) {
     fun disconnect(label: String) {
         store.remove(label)
         active = store.active()
-        client = active?.let { WardenClient(it) }
+        client = active?.let { newTransport(it) }
         refreshHosts()
     }
 
@@ -236,7 +255,7 @@ class WardenRepository(val store: ConnectionStore) {
      * non-2xx the daemon's `{error}` message is surfaced verbatim — it carries the
      * useful 409 guidance (e.g. "pipeline has live jobs — cancel it first").
      */
-    private suspend fun pipelineAction(call: suspend (WardenClient) -> Response<*>): Result<Unit> {
+    private suspend fun pipelineAction(call: suspend (WardenTransport) -> Response<*>): Result<Unit> {
         val c = client ?: return Result.failure(IllegalStateException("no active connection"))
         return try {
             val resp = call(c)
