@@ -1,6 +1,7 @@
 package com.warden.android.data
 
 import com.warden.android.data.model.BackendsResponse
+import com.warden.android.data.model.Capabilities
 import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.DeleteResponse
 import com.warden.android.data.model.DirListing
@@ -33,6 +34,14 @@ interface WardenApi {
     /** Public liveness probe. Returns 200 + `{"status":"ok"}` when healthy. */
     @GET("healthz")
     suspend fun health(): Response<HealthResponse>
+
+    /**
+     * Self-describing daemon feature flags (e.g. `terminal-sessions`). **404** on
+     * daemons that predate the endpoint — the caller then falls back to probing
+     * `GET /backends`. See [com.warden.android.data.model.Capability].
+     */
+    @GET("api/v1/capabilities")
+    suspend fun capabilities(): Response<Capabilities>
 
     /** Authenticated fleet snapshot. 200 + `{sessions:[…]}`; 401 on bad token. */
     @GET("api/v1/sessions")

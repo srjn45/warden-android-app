@@ -14,6 +14,8 @@ import com.warden.android.ui.connect.ConnectScreen
 import com.warden.android.ui.connect.ConnectViewModel
 import com.warden.android.ui.create.CreateAgentScreen
 import com.warden.android.ui.create.CreateAgentViewModel
+import com.warden.android.ui.create.CreateTerminalScreen
+import com.warden.android.ui.create.CreateTerminalViewModel
 import com.warden.android.ui.pipelines.PipelineDetailScreen
 import com.warden.android.ui.pipelines.PipelineDetailViewModel
 import com.warden.android.ui.terminal.TerminalScreen
@@ -25,6 +27,7 @@ private object Routes {
     const val ADD_HOST = "add_host"
     const val HOME = "home"
     const val CREATE = "create"
+    const val CREATE_TERMINAL = "create_terminal"
     const val TERMINAL = "terminal"
     const val PIPELINE = "pipeline"
 }
@@ -70,6 +73,7 @@ fun WardenNavHost(repository: WardenRepository) {
                     navController.navigate("${Routes.TERMINAL}/$id/$label")
                 },
                 onCreateClick = { navController.navigate(Routes.CREATE) },
+                onCreateTerminal = { navController.navigate(Routes.CREATE_TERMINAL) },
                 onAddHost = { navController.navigate(Routes.ADD_HOST) },
                 onNoConnections = {
                     navController.navigate(Routes.CONNECT) {
@@ -89,6 +93,23 @@ fun WardenNavHost(repository: WardenRepository) {
                 viewModel = vm,
                 onBack = { navController.popBackStack() },
                 onCreated = { navController.popBackStack() },
+            )
+        }
+        // "New terminal": on success, jump straight into the new terminal's PTY,
+        // dropping the create form from the back stack so Back returns to Home.
+        composable(Routes.CREATE_TERMINAL) {
+            val vm: CreateTerminalViewModel =
+                viewModel(factory = CreateTerminalViewModel.Factory(repository))
+            CreateTerminalScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onCreated = { id, label ->
+                    val eid = URLEncoder.encode(id, "UTF-8")
+                    val elabel = URLEncoder.encode(label, "UTF-8")
+                    navController.navigate("${Routes.TERMINAL}/$eid/$elabel") {
+                        popUpTo(Routes.CREATE_TERMINAL) { inclusive = true }
+                    }
+                },
             )
         }
         composable(

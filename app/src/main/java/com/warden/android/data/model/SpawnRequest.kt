@@ -16,6 +16,12 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SpawnRequest(
     val type: String = "",
+    /**
+     * Session kind. Empty spawns an AI agent (the daemon's default); `"terminal"`
+     * opens a free-form shell pane, in which case [backend], [model], [role],
+     * [prompt], and [type] are ignored server-side (only [cwd] + [name] matter).
+     */
+    val kind: String = "",
     val name: String = "",
     val repo: String = "",
     val prompt: String = "",

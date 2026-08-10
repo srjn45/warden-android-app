@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -69,6 +70,11 @@ fun HostDrawer(
     pipelinesSelected: Boolean,
     onSelectAgents: () -> Unit,
     onSelectPipelines: () -> Unit,
+    // Terminals is a top-level destination only on daemons that model terminals
+    // as first-class sessions; hidden otherwise (terminal stays a legacy backend).
+    terminalsVisible: Boolean = false,
+    terminalsSelected: Boolean = false,
+    onSelectTerminals: () -> Unit = {},
 ) {
     // Hosts start expanded so the active host is visible the first time the drawer opens.
     var hostsExpanded by remember { mutableStateOf(true) }
@@ -197,6 +203,15 @@ fun HostDrawer(
                     onClick = onSelectPipelines,
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                 )
+                if (terminalsVisible) {
+                    NavigationDrawerItem(
+                        label = { Text("Terminals") },
+                        selected = terminalsSelected,
+                        icon = { Icon(Icons.Filled.Terminal, contentDescription = null) },
+                        onClick = onSelectTerminals,
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    )
+                }
             }
 
             HorizontalDivider()

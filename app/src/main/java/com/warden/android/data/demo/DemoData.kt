@@ -8,6 +8,7 @@ import com.warden.android.data.model.DirListing
 import com.warden.android.data.model.Pipeline
 import com.warden.android.data.model.PipelineJob
 import com.warden.android.data.model.PipelineStatus
+import com.warden.android.data.model.Kind
 import com.warden.android.data.model.RoleInfo
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.Status
@@ -152,6 +153,30 @@ object DemoData {
             contextState = ContextState.WARNING,
             createdAt = "2026-08-06T13:20:00Z",
             updatedAt = "2026-08-06T14:30:00Z",
+        ),
+        // Terminals — first-class sessions (kind=terminal), surfaced on the
+        // Terminals screen and filtered out of the Agents list.
+        Session(
+            id = "demo-t1",
+            name = "shell — warden",
+            kind = Kind.TERMINAL,
+            status = Status.WORKING,
+            workdir = "/home/dev/dev/warden",
+            subject = "~/dev/warden",
+            lastPaneExcerpt = "dev@warden:~/dev/warden$ git status",
+            createdAt = "2026-08-06T13:50:00Z",
+            updatedAt = "2026-08-06T14:32:00Z",
+        ),
+        Session(
+            id = "demo-t2",
+            name = "shell — android-app",
+            kind = Kind.TERMINAL,
+            status = Status.WORKING,
+            workdir = "/home/dev/dev/warden-android-app",
+            subject = "~/dev/warden-android-app",
+            lastPaneExcerpt = "dev@warden:~/dev/warden-android-app$ ./gradlew assembleDebug",
+            createdAt = "2026-08-06T14:05:00Z",
+            updatedAt = "2026-08-06T14:29:00Z",
         ),
     )
 

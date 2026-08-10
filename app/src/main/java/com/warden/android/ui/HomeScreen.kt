@@ -27,10 +27,12 @@ import com.warden.android.ui.agents.DisconnectHostDialog
 import com.warden.android.ui.agents.HostDrawer
 import com.warden.android.ui.pipelines.PipelineListViewModel
 import com.warden.android.ui.pipelines.PipelinesScreen
+import com.warden.android.ui.terminals.TerminalsScreen
+import com.warden.android.ui.terminals.TerminalsViewModel
 import kotlinx.coroutines.launch
 
-/** The two top-level destinations, now reached from the side navigation drawer. */
-private enum class HomeTab { Agents, Pipelines }
+/** The top-level destinations, reached from the side navigation drawer. */
+private enum class HomeTab { Agents, Pipelines, Terminals }
 
 /**
  * The signed-in landing shell. A single side [HostDrawer] is the primary navigation:
@@ -48,11 +50,13 @@ fun HomeScreen(
     settings: SettingsStore,
     onAgentClick: (Session) -> Unit,
     onCreateClick: () -> Unit,
+    onCreateTerminal: () -> Unit,
     onAddHost: () -> Unit,
     onNoConnections: () -> Unit,
     onPipelineClick: (Pipeline) -> Unit,
 ) {
     val hosts by repository.hosts.collectAsStateWithLifecycle()
+    val terminalsSupported by repository.terminalSessions.collectAsStateWithLifecycle()
 
     LaunchedEffect(hosts.connections.isEmpty()) {
         if (hosts.connections.isEmpty()) onNoConnections()
@@ -62,6 +66,12 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     var pendingDisconnect by remember { mutableStateOf<Connection?>(null) }
     var tab by rememberSaveable { mutableStateOf(HomeTab.Agents) }
+
+    // If the Terminals tab is showing and the active host stops supporting
+    // terminal-sessions (e.g. switching to an older daemon), fall back to Agents.
+    LaunchedEffect(terminalsSupported) {
+        if (!terminalsSupported && tab == HomeTab.Terminals) tab = HomeTab.Agents
+    }
 
     // The active host's base URL, for the Pipelines picker subtitle (the Agents tab
     // sources the same string from its own stream state).
@@ -94,6 +104,12 @@ fun HomeScreen(
                     tab = HomeTab.Pipelines
                     scope.launch { drawerState.close() }
                 },
+                terminalsVisible = terminalsSupported,
+                terminalsSelected = tab == HomeTab.Terminals,
+                onSelectTerminals = {
+                    tab = HomeTab.Terminals
+                    scope.launch { drawerState.close() }
+                },
             )
         },
     ) {
@@ -119,6 +135,21 @@ fun HomeScreen(
                         onPipelineClick = onPipelineClick,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
                         hostLabel = activeHostLabel,
+                        hosts = hosts.connections,
+                        activeLabel = hosts.activeLabel,
+                        onSwitchHost = { repository.switchTo(it) },
+                    )
+                }
+
+                HomeTab.Terminals -> {
+                    val vm: TerminalsViewModel = viewModel(
+                        factory = TerminalsViewModel.Factory(repository),
+                    )
+                    TerminalsScreen(
+                        viewModel = vm,
+                        onTerminalClick = onAgentClick,
+                        onNewTerminal = onCreateTerminal,
+                        onOpenDrawer = { scope.launch { drawerState.open() } },
                         hosts = hosts.connections,
                         activeLabel = hosts.activeLabel,
                         onSwitchHost = { repository.switchTo(it) },
