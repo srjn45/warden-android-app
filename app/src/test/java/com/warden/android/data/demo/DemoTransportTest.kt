@@ -1,6 +1,8 @@
 package com.warden.android.data.demo
 
+import com.warden.android.data.model.Capability
 import com.warden.android.data.model.DeleteRequest
+import com.warden.android.data.model.Kind
 import com.warden.android.data.model.PipelineStatus
 import com.warden.android.data.model.SpawnRequest
 import com.warden.android.data.model.Status
@@ -57,6 +59,41 @@ class DemoTransportTest {
         val id = "demo-a3"
         t.api.delete(id, DeleteRequest())
         assertNull(t.sessionStream().first().sessions.firstOrNull { it.id == id })
+    }
+
+    @Test
+    fun `advertises the terminal-sessions capability`() = runBlocking {
+        val t = DemoTransport()
+        val caps = t.api.capabilities().body()?.capabilities.orEmpty()
+        assertTrue(caps.contains(Capability.TERMINAL_SESSIONS))
+    }
+
+    @Test
+    fun `fleet includes terminals separable from agents by kind`() = runBlocking {
+        val t = DemoTransport()
+        val all = t.api.listSessions().body()!!.sessions
+        val terminals = all.filter { it.isTerminal }
+        val agents = all.filterNot { it.isTerminal }
+        assertTrue("expected demo terminals", terminals.size >= 2)
+        assertTrue("expected demo agents", agents.size >= 8)
+        // An agent's kind is blank/absent and must read as a non-terminal.
+        assertTrue(agents.none { it.kind == Kind.TERMINAL })
+        assertTrue(terminals.all { it.kind == Kind.TERMINAL })
+    }
+
+    @Test
+    fun `spawn with kind terminal adds a terminal, not an agent`() = runBlocking {
+        val t = DemoTransport()
+        val created = t.api.spawn(
+            SpawnRequest(kind = Kind.TERMINAL, cwd = "/home/dev/dev/warden"),
+        ).body()
+        assertNotNull(created)
+        assertTrue(created!!.isTerminal)
+        assertEquals(Kind.TERMINAL, created.kind)
+        // It shows up in the live stream and is filtered into the terminals view.
+        val streamed = t.sessionStream().first().sessions.firstOrNull { it.id == created.id }
+        assertNotNull(streamed)
+        assertTrue(streamed!!.isTerminal)
     }
 
     @Test

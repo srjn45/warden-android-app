@@ -3,6 +3,8 @@ package com.warden.android.data.demo
 import com.warden.android.data.WardenApi
 import com.warden.android.data.WardenTransport
 import com.warden.android.data.model.BackendsResponse
+import com.warden.android.data.model.Capabilities
+import com.warden.android.data.model.Capability
 import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.DeleteResponse
 import com.warden.android.data.model.DirListing
@@ -15,6 +17,7 @@ import com.warden.android.data.model.RolesResponse
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.SessionList
 import com.warden.android.data.model.SpawnRequest
+import com.warden.android.data.model.Kind
 import com.warden.android.data.model.Status
 import com.warden.android.data.model.StatusResponse
 import com.warden.android.data.terminal.TerminalListener
@@ -46,6 +49,11 @@ class DemoTransport : WardenTransport {
 
         override suspend fun health(): Response<HealthResponse> =
             Response.success(HealthResponse(status = "ok"))
+
+        // The demo daemon models terminals as first-class sessions, so it
+        // advertises the flag — the app shows the Terminals section in demo mode.
+        override suspend fun capabilities(): Response<Capabilities> =
+            Response.success(Capabilities(listOf(Capability.TERMINAL_SESSIONS)))
 
         override suspend fun listSessions(): Response<SessionList> =
             Response.success(SessionList(sessions.value))
@@ -86,21 +94,38 @@ class DemoTransport : WardenTransport {
 
         override suspend fun spawn(req: SpawnRequest): Response<Session> {
             val n = spawnCounter.incrementAndGet()
-            val session = Session(
-                id = "demo-new-$n",
-                name = req.name.ifBlank { "new-agent-$n" },
-                status = Status.SPAWNING,
-                repo = req.repo,
-                role = req.role,
-                backend = req.backend.ifBlank { "claude" },
-                model = req.model,
-                prompt = req.prompt,
-                workdir = req.cwd,
-                subject = req.prompt.take(60),
-                lastPaneExcerpt = "spawning…",
-                createdAt = "2026-08-06T14:35:00Z",
-                updatedAt = "2026-08-06T14:35:00Z",
-            )
+            // A terminal (kind=terminal, or the back-compat backend=terminal alias)
+            // is a free-form shell pane — no backend/model/role/prompt.
+            val isTerminal = req.kind == Kind.TERMINAL || req.backend == "terminal"
+            val session = if (isTerminal) {
+                Session(
+                    id = "demo-term-$n",
+                    name = req.name.ifBlank { "shell-$n" },
+                    kind = Kind.TERMINAL,
+                    status = Status.WORKING,
+                    workdir = req.cwd,
+                    subject = req.cwd.ifBlank { "~" },
+                    lastPaneExcerpt = "${'$'} ",
+                    createdAt = "2026-08-06T14:35:00Z",
+                    updatedAt = "2026-08-06T14:35:00Z",
+                )
+            } else {
+                Session(
+                    id = "demo-new-$n",
+                    name = req.name.ifBlank { "new-agent-$n" },
+                    status = Status.SPAWNING,
+                    repo = req.repo,
+                    role = req.role,
+                    backend = req.backend.ifBlank { "claude" },
+                    model = req.model,
+                    prompt = req.prompt,
+                    workdir = req.cwd,
+                    subject = req.prompt.take(60),
+                    lastPaneExcerpt = "spawning…",
+                    createdAt = "2026-08-06T14:35:00Z",
+                    updatedAt = "2026-08-06T14:35:00Z",
+                )
+            }
             sessions.value = sessions.value + session
             return Response.success(session)
         }

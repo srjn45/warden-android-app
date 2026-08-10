@@ -45,9 +45,25 @@ data class Session(
     val backend: String = "",
     @SerialName("context_tokens") val contextTokens: Int = 0,
     @SerialName("context_state") val contextState: String = "",
+    /**
+     * Session kind discriminator (warden ≥ the terminal-sessions release). An
+     * absent or empty value means an AI **agent** (back-compat: records that
+     * predate the field, and every AI backend, read as agents); `"terminal"`
+     * marks a free-form shell pane. See [Kind] and [isTerminal].
+     */
+    val kind: String = "",
 ) {
     /** Human-facing title for a list row: the agent name, falling back to id. */
     val displayName: String get() = name.ifBlank { id }
+
+    /** True when this session is a plain terminal pane rather than an AI agent. */
+    val isTerminal: Boolean get() = kind == Kind.TERMINAL
+}
+
+/** Known [Session.kind] values. Empty/absent == [AGENT] (back-compat). */
+object Kind {
+    const val AGENT = "agent"
+    const val TERMINAL = "terminal"
 }
 
 /** Known [Session.status] values (openapi `Status` enum). */

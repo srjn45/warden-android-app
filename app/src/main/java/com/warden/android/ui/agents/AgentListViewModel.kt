@@ -4,13 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.warden.android.data.SettingsStore
+import com.warden.android.data.StreamPhase
 import com.warden.android.data.WardenRepository
 import com.warden.android.data.model.Session
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -18,6 +17,13 @@ import kotlinx.coroutines.launch
 
 /** Connection state of the live SSE stream backing the list. */
 enum class StreamStatus { Connecting, Live, Disconnected }
+
+/** Maps the repository's shared-stream phase to this screen's status. */
+internal fun StreamPhase.toStreamStatus(): StreamStatus = when (this) {
+    StreamPhase.Connecting -> StreamStatus.Connecting
+    StreamPhase.Live -> StreamStatus.Live
+    StreamPhase.Disconnected -> StreamStatus.Disconnected
+}
 
 data class AgentListUiState(
     val agents: List<Session> = emptyList(),
@@ -43,65 +49,43 @@ class AgentListViewModel(
     )
     val state: StateFlow<AgentListUiState> = _state.asStateFlow()
 
-    /** The live SSE collection; cancelled + replaced whenever the host switches. */
-    private var streamJob: Job? = null
-
     init {
+        observeFleet()
         observeActiveHost()
     }
 
     /**
-     * One VM survives host switches: it watches [WardenRepository.hosts] and, each
-     * time the active host changes, clears the list and (re)opens the stream
-     * against the new host. This tears the old socket down deterministically —
-     * cheaper and leak-free versus re-keying a fresh ViewModel per host.
+     * Collects the repository's single shared fleet stream and projects the AGENT
+     * sessions (terminals are filtered out — they live on their own screen). One
+     * shared socket backs both the Agents and Terminals screens, so this is a
+     * plain collector rather than a per-VM stream.
+     *
+     * Agents are shown in the daemon's own order — we deliberately do NOT sort.
+     * Ordering by status/updated_at made rows jump on every agent action, which
+     * is disorienting on mobile; grouping (below) is the opt-in way to organise.
      */
+    private fun observeFleet() {
+        viewModelScope.launch {
+            repo.fleet.collect { fleet ->
+                _state.update {
+                    it.copy(
+                        agents = fleet.sessions.filterNot { s -> s.isTerminal },
+                        stream = fleet.phase.toStreamStatus(),
+                        error = fleet.error,
+                    )
+                }
+            }
+        }
+    }
+
+    /** Tracks the active host's address for the title-bar subtitle. */
     private fun observeActiveHost() {
         viewModelScope.launch {
             repo.hosts
                 .map { it.activeLabel }
                 .distinctUntilChanged()
                 .collect {
-                    _state.update {
-                        it.copy(
-                            hostLabel = repo.active?.baseUrl ?: "",
-                            agents = emptyList(),
-                            stream = StreamStatus.Connecting,
-                            error = null,
-                        )
-                    }
-                    startStream()
-                }
-        }
-    }
-
-    /**
-     * Collects the SSE snapshot stream for the active host. On failure it flips to
-     * Disconnected (tmux holds the session server-side, so a dropped socket is
-     * cheap to re-establish — design.md §2.1, §6); pull-to-refresh and Reconnect
-     * give a manual retry.
-     *
-     * Agents are stored in the daemon's own order — we deliberately do NOT sort.
-     * Ordering by status/updated_at made rows jump on every agent action, which
-     * is disorienting on mobile; grouping (below) is the opt-in way to organise.
-     */
-    private fun startStream() {
-        streamJob?.cancel()
-        streamJob = viewModelScope.launch {
-            repo.sessionStream()
-                .catch { e ->
-                    _state.update {
-                        it.copy(stream = StreamStatus.Disconnected, error = e.message)
-                    }
-                }
-                .collect { snapshot ->
-                    _state.update {
-                        it.copy(
-                            agents = snapshot.sessions,
-                            stream = StreamStatus.Live,
-                            error = null,
-                        )
-                    }
+                    _state.update { it.copy(hostLabel = repo.active?.baseUrl ?: "") }
                 }
         }
     }
@@ -113,7 +97,11 @@ class AgentListViewModel(
             repo.listSessions()
                 .onSuccess { list ->
                     _state.update {
-                        it.copy(agents = list, refreshing = false, error = null)
+                        it.copy(
+                            agents = list.filterNot { s -> s.isTerminal },
+                            refreshing = false,
+                            error = null,
+                        )
                     }
                 }
                 .onFailure { e ->
@@ -171,10 +159,10 @@ class AgentListViewModel(
     /** Acknowledge the transient snackbar message. */
     fun clearMessage() = _state.update { it.copy(message = null) }
 
-    /** Manual reconnect for the Disconnected state. */
+    /** Manual reconnect for the Disconnected state: re-opens the shared stream. */
     fun reconnect() {
         _state.update { it.copy(stream = StreamStatus.Connecting, error = null) }
-        startStream()
+        repo.reconnect()
     }
 
     class Factory(

@@ -1,8 +1,10 @@
 package com.warden.android.data
 
 import com.warden.android.data.model.BackendInfo
+import com.warden.android.data.model.Capability
 import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.DirListing
+import com.warden.android.data.model.Kind
 import com.warden.android.data.model.Pipeline
 import com.warden.android.data.model.RemoveWorktreeRequest
 import com.warden.android.data.model.RoleInfo
@@ -13,10 +15,24 @@ import com.warden.android.data.model.Verdict
 import com.warden.android.data.demo.DemoTransport
 import com.warden.android.data.terminal.TerminalListener
 import com.warden.android.data.terminal.TerminalTransport
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.scan
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.serialization.Serializable
 import retrofit2.Response
 import java.io.IOException
@@ -42,6 +58,20 @@ data class HostsState(
     val activeLabel: String? = null,
 )
 
+/** Connection phase of the single live fleet stream. */
+enum class StreamPhase { Connecting, Live, Disconnected }
+
+/**
+ * The active host's live fleet, as one shared snapshot. Both the Agents and the
+ * Terminals screens derive from this same value (filtered by [Session.kind]), so
+ * there is only ever ONE SSE stream open to the active host.
+ */
+data class FleetState(
+    val sessions: List<Session> = emptyList(),
+    val phase: StreamPhase = StreamPhase.Connecting,
+    val error: String? = null,
+)
+
 /**
  * Single source of truth for the active connection and its transport. Holds the
  * live [WardenClient], exposes the read-only REST + SSE surface, and runs the
@@ -49,8 +79,16 @@ data class HostsState(
  */
 class WardenRepository(val store: ConnectionStore) {
 
-    @Volatile
-    private var client: WardenTransport? = null
+    /** App-lifetime scope for the shared fleet stream + capability detection. */
+    private val scope = CoroutineScope(SupervisorJob())
+
+    /**
+     * The transport for the active host, as a flow so the shared [fleet] stream
+     * re-targets whenever the host switches. A getter over its value keeps the
+     * many `client ?: …` REST call sites unchanged.
+     */
+    private val _transport = MutableStateFlow<WardenTransport?>(null)
+    private val client: WardenTransport? get() = _transport.value
 
     @Volatile
     var active: Connection? = store.active()
@@ -75,8 +113,84 @@ class WardenRepository(val store: ConnectionStore) {
     private val _hosts = MutableStateFlow(HostsState(store.connections(), active?.label))
     val hosts: StateFlow<HostsState> = _hosts.asStateFlow()
 
+    /**
+     * Whether the active host models terminals as first-class sessions (the
+     * `terminal-sessions` capability). Drives the Terminals section's visibility
+     * and whether the create flow spawns `kind=terminal` vs a legacy backend.
+     * Re-detected on every host switch.
+     */
+    private val _terminalSessions = MutableStateFlow(false)
+    val terminalSessions: StateFlow<Boolean> = _terminalSessions.asStateFlow()
+
     init {
-        active?.let { client = newTransport(it) }
+        active?.let { _transport.value = newTransport(it) }
+        // Re-run capability detection whenever the active transport changes.
+        _transport
+            .onEach { t -> _terminalSessions.value = t?.let { detectTerminalSessions(it) } ?: false }
+            .launchIn(scope)
+    }
+
+    /**
+     * The single live fleet stream for the active host, shared across every
+     * collector (Agents + Terminals). [flatMapLatest] tears down the old socket
+     * and opens a new one on each host switch; the last snapshot is retained
+     * across a transient disconnect so the list stays visible with an offline
+     * badge. Kept warm for a few seconds after the last collector leaves so tab
+     * switches don't churn the socket ([SharingStarted.WhileSubscribed]).
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val fleet: StateFlow<FleetState> = _transport
+        .flatMapLatest { t ->
+            flow {
+                emit(FleetEvent.Reconnecting)
+                if (t != null) {
+                    emitAll(t.sessionStream().map { FleetEvent.Snapshot(it.sessions) })
+                }
+            }.catch { e -> emit(FleetEvent.Failed(e.message)) }
+        }
+        .scan(FleetState()) { state, event ->
+            when (event) {
+                FleetEvent.Reconnecting -> FleetState(phase = StreamPhase.Connecting)
+                is FleetEvent.Snapshot -> FleetState(event.sessions, StreamPhase.Live, null)
+                is FleetEvent.Failed ->
+                    state.copy(phase = StreamPhase.Disconnected, error = event.error)
+            }
+        }
+        .stateIn(scope, SharingStarted.WhileSubscribed(5_000), FleetState())
+
+    /** Internal events feeding the [fleet] reducer. */
+    private sealed interface FleetEvent {
+        /** A new transport (host switch / manual reconnect): clear + Connecting. */
+        data object Reconnecting : FleetEvent
+        data class Snapshot(val sessions: List<Session>) : FleetEvent
+        data class Failed(val error: String?) : FleetEvent
+    }
+
+    /**
+     * Detects whether [t]'s daemon supports terminal-as-kind. Prefers the
+     * explicit `GET /capabilities` flag; on a 404 (older daemon) or flag-absent
+     * result falls back to the self-describing proxy — `terminal` MISSING from
+     * `GET /backends` (the two changes ship in one atomic daemon release). Any
+     * network failure resolves to `false` (safe: no Terminals section, and
+     * `terminal` stays a legacy backend in the create sheet).
+     */
+    private suspend fun detectTerminalSessions(t: WardenTransport): Boolean = try {
+        val caps = t.api.capabilities()
+        if (caps.isSuccessful) {
+            caps.body()?.capabilities?.contains(Capability.TERMINAL_SESSIONS) == true
+        } else {
+            terminalAbsentFromBackends(t)
+        }
+    } catch (e: IOException) {
+        false
+    }
+
+    /** Fallback signal: a successful `/backends` that no longer lists `terminal`. */
+    private suspend fun terminalAbsentFromBackends(t: WardenTransport): Boolean = try {
+        val resp = t.api.listBackends()
+        resp.isSuccessful && resp.body()?.backends?.none { it.id == "terminal" } == true
+    } catch (e: IOException) {
+        false
     }
 
     private fun refreshHosts() {
@@ -87,7 +201,7 @@ class WardenRepository(val store: ConnectionStore) {
     fun activate(connection: Connection) {
         store.upsertAndActivate(connection)
         active = connection
-        client = newTransport(connection)
+        _transport.value = newTransport(connection)
         refreshHosts()
     }
 
@@ -109,7 +223,7 @@ class WardenRepository(val store: ConnectionStore) {
         if (target.label == active?.label) return
         store.setActive(label)
         active = target
-        client = newTransport(target)
+        _transport.value = newTransport(target)
         refreshHosts()
     }
 
@@ -120,8 +234,17 @@ class WardenRepository(val store: ConnectionStore) {
     fun disconnect(label: String) {
         store.remove(label)
         active = store.active()
-        client = active?.let { newTransport(it) }
+        _transport.value = active?.let { newTransport(it) }
         refreshHosts()
+    }
+
+    /**
+     * Manual reconnect for the Disconnected state: rebuilds the active transport
+     * so the shared [fleet] stream re-opens a fresh socket (a no-op if there is
+     * no active host).
+     */
+    fun reconnect() {
+        active?.let { _transport.value = newTransport(it) }
     }
 
     /**
@@ -326,6 +449,15 @@ class WardenRepository(val store: ConnectionStore) {
             SpawnOutcome.Failed(e.message ?: "Network error")
         }
     }
+
+    /**
+     * Opens a terminal on the active host: a `POST /spawn` with `kind=terminal`,
+     * where only [cwd] + optional [name] matter (backend/model/role/prompt are
+     * ignored server-side). Reuses [spawn], so the same spawn-gate confirmation
+     * flow applies if the daemon warns.
+     */
+    suspend fun createTerminal(cwd: String, name: String): SpawnOutcome =
+        spawn(SpawnRequest(kind = Kind.TERMINAL, cwd = cwd.trim(), name = name.trim()))
 
     /** Kills an agent's tmux session but keeps its record + worktree. */
     suspend fun terminateAgent(id: String): Result<Unit> {

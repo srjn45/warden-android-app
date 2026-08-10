@@ -60,7 +60,25 @@ class CreateAgentViewModel(private val repo: WardenRepository) : ViewModel() {
     private val _state = MutableStateFlow(CreateAgentUiState())
     val state: StateFlow<CreateAgentUiState> = _state.asStateFlow()
 
+    /** Latest backend registry (live or static seed), before terminal filtering. */
+    private var rawBackends: List<BackendInfo> = Backend.staticInfos()
+
+    /**
+     * Publishes [rawBackends] to the picker, dropping the plain-shell `terminal`
+     * backend on daemons that model terminals as first-class sessions (there the
+     * dedicated "New terminal" action creates them; a live `/backends` on such a
+     * daemon already omits terminal — this also covers the static-seed window and
+     * a failed live fetch). Older daemons keep terminal as a backend, as before.
+     */
+    private fun applyBackends() {
+        val visible =
+            if (repo.terminalSessions.value) rawBackends.filterNot { it.id == "terminal" }
+            else rawBackends
+        _state.update { it.copy(backends = visible) }
+    }
+
     init {
+        applyBackends()
         viewModelScope.launch {
             repo.listRoles().onSuccess { roles ->
                 _state.update { it.copy(roles = roles) }
@@ -71,8 +89,15 @@ class CreateAgentViewModel(private val repo: WardenRepository) : ViewModel() {
             // Prefer the live registry; keep the static seed on 404 (older
             // daemon) / network error, and ignore an empty response the same way.
             repo.listBackends().onSuccess { backends ->
-                if (backends.isNotEmpty()) _state.update { it.copy(backends = backends) }
+                if (backends.isNotEmpty()) {
+                    rawBackends = backends
+                    applyBackends()
+                }
             }
+        }
+        // Re-filter if capability detection resolves after this VM was built.
+        viewModelScope.launch {
+            repo.terminalSessions.collect { applyBackends() }
         }
     }
 
