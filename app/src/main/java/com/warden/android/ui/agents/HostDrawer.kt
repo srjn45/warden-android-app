@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
@@ -70,6 +71,11 @@ fun HostDrawer(
     pipelinesSelected: Boolean,
     onSelectAgents: () -> Unit,
     onSelectPipelines: () -> Unit,
+    // Scheduled is a top-level destination only on daemons that fire agents on a
+    // schedule (the scheduled-agents capability); hidden otherwise.
+    scheduledVisible: Boolean = false,
+    scheduledSelected: Boolean = false,
+    onSelectScheduled: () -> Unit = {},
     // Terminals is a top-level destination only on daemons that model terminals
     // as first-class sessions; hidden otherwise (terminal stays a legacy backend).
     terminalsVisible: Boolean = false,
@@ -196,6 +202,15 @@ fun HostDrawer(
                     onClick = onSelectAgents,
                     modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
                 )
+                if (scheduledVisible) {
+                    NavigationDrawerItem(
+                        label = { Text("Scheduled") },
+                        selected = scheduledSelected,
+                        icon = { Icon(Icons.Filled.Schedule, contentDescription = null) },
+                        onClick = onSelectScheduled,
+                        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding),
+                    )
+                }
                 NavigationDrawerItem(
                     label = { Text("Pipelines") },
                     selected = pipelinesSelected,

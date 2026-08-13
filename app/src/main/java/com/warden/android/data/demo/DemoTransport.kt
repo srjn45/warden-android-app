@@ -14,6 +14,7 @@ import com.warden.android.data.model.PipelineList
 import com.warden.android.data.model.PipelineStatus
 import com.warden.android.data.model.RemoveWorktreeRequest
 import com.warden.android.data.model.RolesResponse
+import com.warden.android.data.model.ScheduleList
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.SessionList
 import com.warden.android.data.model.SpawnRequest
@@ -43,6 +44,7 @@ class DemoTransport : WardenTransport {
 
     private val sessions = MutableStateFlow(DemoData.sessions())
     private val pipelines = MutableStateFlow(DemoData.pipelines())
+    private val schedules = MutableStateFlow(DemoData.schedules())
     private val spawnCounter = AtomicInteger(0)
 
     override val api: WardenApi = object : WardenApi {
@@ -50,10 +52,13 @@ class DemoTransport : WardenTransport {
         override suspend fun health(): Response<HealthResponse> =
             Response.success(HealthResponse(status = "ok"))
 
-        // The demo daemon models terminals as first-class sessions, so it
-        // advertises the flag — the app shows the Terminals section in demo mode.
+        // The demo daemon models terminals as first-class sessions AND fires
+        // scheduled agents, so it advertises both flags — the app shows the
+        // Terminals and Scheduled sections in demo mode.
         override suspend fun capabilities(): Response<Capabilities> =
-            Response.success(Capabilities(listOf(Capability.TERMINAL_SESSIONS)))
+            Response.success(
+                Capabilities(listOf(Capability.TERMINAL_SESSIONS, Capability.SCHEDULED_AGENTS)),
+            )
 
         override suspend fun listSessions(): Response<SessionList> =
             Response.success(SessionList(sessions.value))
@@ -66,6 +71,15 @@ class DemoTransport : WardenTransport {
 
         override suspend fun listDirs(path: String?): Response<DirListing> =
             Response.success(DemoData.dirListing(path))
+
+        override suspend fun listSchedules(): Response<ScheduleList> =
+            Response.success(ScheduleList(schedules.value))
+
+        override suspend fun enableSchedule(id: String): Response<StatusResponse> =
+            setScheduleEnabled(id, enabled = true)
+
+        override suspend fun disableSchedule(id: String): Response<StatusResponse> =
+            setScheduleEnabled(id, enabled = false)
 
         override suspend fun listPipelines(): Response<PipelineList> =
             Response.success(PipelineList(pipelines.value))
@@ -164,6 +178,13 @@ class DemoTransport : WardenTransport {
     private fun setPipelineStatus(id: String, status: String): Response<StatusResponse> {
         pipelines.value = pipelines.value.map {
             if (it.id == id) it.copy(status = status) else it
+        }
+        return ok()
+    }
+
+    private fun setScheduleEnabled(id: String, enabled: Boolean): Response<StatusResponse> {
+        schedules.value = schedules.value.map {
+            if (it.id == id) it.copy(enabled = enabled) else it
         }
         return ok()
     }

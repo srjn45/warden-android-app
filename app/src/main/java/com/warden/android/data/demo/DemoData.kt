@@ -10,6 +10,9 @@ import com.warden.android.data.model.PipelineJob
 import com.warden.android.data.model.PipelineStatus
 import com.warden.android.data.model.Kind
 import com.warden.android.data.model.RoleInfo
+import com.warden.android.data.model.Schedule
+import com.warden.android.data.model.ScheduleCadence
+import com.warden.android.data.model.ScheduleMode
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.Status
 
@@ -154,6 +157,27 @@ object DemoData {
             createdAt = "2026-08-06T13:20:00Z",
             updatedAt = "2026-08-06T14:30:00Z",
         ),
+        // A live run fired by the "nightly-audit" schedule (demo-sch1): carries
+        // schedule_id, so it surfaces on the Scheduled screen as "running now →
+        // open terminal" and is filtered out of the Agents list.
+        Session(
+            id = "demo-s1",
+            name = "nightly-audit",
+            status = Status.WORKING,
+            repo = REPO,
+            branch = "agent/nightly-audit",
+            role = "general",
+            backend = "claude",
+            model = "claude-sonnet-5",
+            subject = "Run the nightly audit",
+            lastPaneExcerpt = "Running linters across the repo…",
+            contextTokens = 12_400,
+            contextState = ContextState.OK,
+            scheduleId = "demo-sch1",
+            scheduleName = "nightly-audit",
+            createdAt = "2026-08-11T02:00:00Z",
+            updatedAt = "2026-08-11T02:03:00Z",
+        ),
         // Terminals — first-class sessions (kind=terminal), surfaced on the
         // Terminals screen and filtered out of the Agents list.
         Session(
@@ -232,6 +256,55 @@ object DemoData {
                     status = "done",
                 ),
             ),
+        ),
+    )
+
+    /**
+     * A pristine schedule snapshot. A fresh copy is taken on each demo activation.
+     * Deliberately varied: a live recurring agent job (its run is [demo-s1] above),
+     * a disabled one-shot, and a recurring pipeline whose last run errored.
+     */
+    fun schedules(): List<Schedule> = listOf(
+        Schedule(
+            id = "demo-sch1",
+            name = "nightly-audit",
+            kind = ScheduleCadence.CRON,
+            mode = ScheduleMode.AGENT,
+            enabled = true,
+            cron = "0 2 * * *",
+            nextRun = "2026-08-12T02:00:00Z",
+            lastRunAt = "2026-08-11T02:00:00Z",
+            lastRunSessionId = "demo-s1",
+            lastRunStatus = Status.WORKING,
+            type = "audit",
+            repo = REPO,
+            branch = "agent/nightly-audit",
+            prompt = "Run the linters, check for outdated deps, and file issues for anything broken",
+        ),
+        Schedule(
+            id = "demo-sch2",
+            name = "release-notes-draft",
+            kind = ScheduleCadence.AT,
+            mode = ScheduleMode.AGENT,
+            enabled = false,
+            at = "2026-08-15T09:00:00Z",
+            nextRun = "2026-08-15T09:00:00Z",
+            type = "docs",
+            repo = REPO,
+            prompt = "Draft the next release changelog from the merged PRs since the last tag",
+        ),
+        Schedule(
+            id = "demo-sch3",
+            name = "weekly-dep-bump",
+            kind = ScheduleCadence.CRON,
+            mode = ScheduleMode.PIPELINE,
+            enabled = true,
+            cron = "0 6 * * 1",
+            nextRun = "2026-08-17T06:00:00Z",
+            lastRunAt = "2026-08-10T06:00:00Z",
+            lastRunStatus = Status.ERRORED,
+            lastError = "pipeline job 'test' failed",
+            repo = REPO,
         ),
     )
 

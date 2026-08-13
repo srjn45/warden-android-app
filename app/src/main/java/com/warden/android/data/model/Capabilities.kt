@@ -23,4 +23,14 @@ object Capability {
      * action; when absent it treats `terminal` as a legacy backend.
      */
     const val TERMINAL_SESSIONS = "terminal-sessions"
+
+    /**
+     * The daemon can fire agents (and pipelines) on a schedule and exposes the
+     * `GET /schedules` control surface. When present, the app shows a dedicated
+     * Scheduled section. Runs it fires carry `schedule_id` on their [Session], so
+     * they surface there and stay out of the Agents list. If the scheduler is
+     * configured off, the schedule routes answer **403** and the section shows a
+     * "scheduling disabled" empty state.
+     */
+    const val SCHEDULED_AGENTS = "scheduled-agents"
 }

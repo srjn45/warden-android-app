@@ -3,6 +3,7 @@ package com.warden.android.data.demo
 import com.warden.android.data.model.Capability
 import com.warden.android.data.model.DeleteRequest
 import com.warden.android.data.model.Kind
+import com.warden.android.data.model.ScheduleMode
 import com.warden.android.data.model.PipelineStatus
 import com.warden.android.data.model.SpawnRequest
 import com.warden.android.data.model.Status
@@ -97,6 +98,47 @@ class DemoTransportTest {
     }
 
     @Test
+    fun `advertises the scheduled-agents capability`() = runBlocking {
+        val t = DemoTransport()
+        val caps = t.api.capabilities().body()?.capabilities.orEmpty()
+        assertTrue(caps.contains(Capability.SCHEDULED_AGENTS))
+    }
+
+    @Test
+    fun `lists schedules with an agent and a pipeline mode`() = runBlocking {
+        val t = DemoTransport()
+        val schedules = t.api.listSchedules().body()?.schedules.orEmpty()
+        assertTrue("expected demo schedules", schedules.size >= 3)
+        assertTrue(schedules.any { it.mode == ScheduleMode.AGENT })
+        assertTrue(schedules.any { it.mode == ScheduleMode.PIPELINE })
+    }
+
+    @Test
+    fun `scheduled runs are separable from agents and terminals by schedule_id`() = runBlocking {
+        val t = DemoTransport()
+        val all = t.api.listSessions().body()!!.sessions
+        val scheduled = all.filter { it.isScheduled }
+        assertTrue("expected at least one scheduled run", scheduled.isNotEmpty())
+        // A scheduled run is neither a terminal nor counted among the plain agents.
+        assertTrue(scheduled.none { it.isTerminal })
+        val agents = all.filterNot { it.isTerminal || it.isScheduled }
+        assertTrue(agents.none { it.isScheduled })
+        // Its schedule_id points at a real schedule in the list.
+        val scheduleIds = t.api.listSchedules().body()!!.schedules.map { it.id }.toSet()
+        assertTrue(scheduled.all { it.scheduleId in scheduleIds })
+    }
+
+    @Test
+    fun `disable then enable flips a schedule`() = runBlocking {
+        val t = DemoTransport()
+        val id = t.api.listSchedules().body()!!.schedules.first { it.enabled }.id
+        t.api.disableSchedule(id)
+        assertFalse(scheduleEnabled(t, id))
+        t.api.enableSchedule(id)
+        assertTrue(scheduleEnabled(t, id))
+    }
+
+    @Test
     fun `spawn adds an agent`() = runBlocking {
         val t = DemoTransport()
         val before = t.api.listSessions().body()!!.sessions.size
@@ -120,4 +162,7 @@ class DemoTransportTest {
 
     private suspend fun statusOf(t: DemoTransport, id: String): String? =
         t.api.listSessions().body()?.sessions?.firstOrNull { it.id == id }?.status
+
+    private suspend fun scheduleEnabled(t: DemoTransport, id: String): Boolean =
+        t.api.listSchedules().body()?.schedules?.firstOrNull { it.id == id }?.enabled == true
 }
