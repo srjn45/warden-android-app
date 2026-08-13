@@ -27,12 +27,14 @@ import com.warden.android.ui.agents.DisconnectHostDialog
 import com.warden.android.ui.agents.HostDrawer
 import com.warden.android.ui.pipelines.PipelineListViewModel
 import com.warden.android.ui.pipelines.PipelinesScreen
+import com.warden.android.ui.scheduled.ScheduledScreen
+import com.warden.android.ui.scheduled.ScheduledViewModel
 import com.warden.android.ui.terminals.TerminalsScreen
 import com.warden.android.ui.terminals.TerminalsViewModel
 import kotlinx.coroutines.launch
 
 /** The top-level destinations, reached from the side navigation drawer. */
-private enum class HomeTab { Agents, Pipelines, Terminals }
+private enum class HomeTab { Agents, Pipelines, Scheduled, Terminals }
 
 /**
  * The signed-in landing shell. A single side [HostDrawer] is the primary navigation:
@@ -57,6 +59,7 @@ fun HomeScreen(
 ) {
     val hosts by repository.hosts.collectAsStateWithLifecycle()
     val terminalsSupported by repository.terminalSessions.collectAsStateWithLifecycle()
+    val scheduledSupported by repository.scheduledAgents.collectAsStateWithLifecycle()
 
     LaunchedEffect(hosts.connections.isEmpty()) {
         if (hosts.connections.isEmpty()) onNoConnections()
@@ -67,10 +70,13 @@ fun HomeScreen(
     var pendingDisconnect by remember { mutableStateOf<Connection?>(null) }
     var tab by rememberSaveable { mutableStateOf(HomeTab.Agents) }
 
-    // If the Terminals tab is showing and the active host stops supporting
-    // terminal-sessions (e.g. switching to an older daemon), fall back to Agents.
+    // If a capability-gated tab is showing and the active host stops supporting it
+    // (e.g. switching to an older daemon), fall back to Agents.
     LaunchedEffect(terminalsSupported) {
         if (!terminalsSupported && tab == HomeTab.Terminals) tab = HomeTab.Agents
+    }
+    LaunchedEffect(scheduledSupported) {
+        if (!scheduledSupported && tab == HomeTab.Scheduled) tab = HomeTab.Agents
     }
 
     // The active host's base URL, for the Pipelines picker subtitle (the Agents tab
@@ -104,6 +110,12 @@ fun HomeScreen(
                     tab = HomeTab.Pipelines
                     scope.launch { drawerState.close() }
                 },
+                scheduledVisible = scheduledSupported,
+                scheduledSelected = tab == HomeTab.Scheduled,
+                onSelectScheduled = {
+                    tab = HomeTab.Scheduled
+                    scope.launch { drawerState.close() }
+                },
                 terminalsVisible = terminalsSupported,
                 terminalsSelected = tab == HomeTab.Terminals,
                 onSelectTerminals = {
@@ -135,6 +147,20 @@ fun HomeScreen(
                         onPipelineClick = onPipelineClick,
                         onOpenDrawer = { scope.launch { drawerState.open() } },
                         hostLabel = activeHostLabel,
+                        hosts = hosts.connections,
+                        activeLabel = hosts.activeLabel,
+                        onSwitchHost = { repository.switchTo(it) },
+                    )
+                }
+
+                HomeTab.Scheduled -> {
+                    val vm: ScheduledViewModel = viewModel(
+                        factory = ScheduledViewModel.Factory(repository),
+                    )
+                    ScheduledScreen(
+                        viewModel = vm,
+                        onRunClick = onAgentClick,
+                        onOpenDrawer = { scope.launch { drawerState.open() } },
                         hosts = hosts.connections,
                         activeLabel = hosts.activeLabel,
                         onSwitchHost = { repository.switchTo(it) },

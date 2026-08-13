@@ -8,6 +8,7 @@ import com.warden.android.data.model.Kind
 import com.warden.android.data.model.Pipeline
 import com.warden.android.data.model.RemoveWorktreeRequest
 import com.warden.android.data.model.RoleInfo
+import com.warden.android.data.model.Schedule
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.SessionList
 import com.warden.android.data.model.SpawnRequest
@@ -15,6 +16,7 @@ import com.warden.android.data.model.Verdict
 import com.warden.android.data.demo.DemoTransport
 import com.warden.android.data.terminal.TerminalListener
 import com.warden.android.data.terminal.TerminalTransport
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
@@ -122,11 +124,19 @@ class WardenRepository(val store: ConnectionStore) {
     private val _terminalSessions = MutableStateFlow(false)
     val terminalSessions: StateFlow<Boolean> = _terminalSessions.asStateFlow()
 
+    /**
+     * Whether the active host can fire agents on a schedule (the `scheduled-agents`
+     * capability). Drives the Scheduled section's visibility. Re-detected on every
+     * host switch, from the same `/capabilities` fetch as [terminalSessions].
+     */
+    private val _scheduledAgents = MutableStateFlow(false)
+    val scheduledAgents: StateFlow<Boolean> = _scheduledAgents.asStateFlow()
+
     init {
         active?.let { _transport.value = newTransport(it) }
         // Re-run capability detection whenever the active transport changes.
         _transport
-            .onEach { t -> _terminalSessions.value = t?.let { detectTerminalSessions(it) } ?: false }
+            .onEach { t -> detectCapabilities(t) }
             .launchIn(scope)
     }
 
@@ -167,22 +177,40 @@ class WardenRepository(val store: ConnectionStore) {
     }
 
     /**
-     * Detects whether [t]'s daemon supports terminal-as-kind. Prefers the
-     * explicit `GET /capabilities` flag; on a 404 (older daemon) or flag-absent
-     * result falls back to the self-describing proxy — `terminal` MISSING from
-     * `GET /backends` (the two changes ship in one atomic daemon release). Any
-     * network failure resolves to `false` (safe: no Terminals section, and
-     * `terminal` stays a legacy backend in the create sheet).
+     * Detects the active host's optional capabilities from a single
+     * `GET /capabilities` fetch, updating [terminalSessions] and [scheduledAgents].
+     *
+     * Parse-guarded, not status-guarded: a daemon that predates the endpoint
+     * returns 200 + `text/html` (the SPA shell), so the JSON decode throws rather
+     * than 404-ing — [capabilityFlags] treats any non-JSON / error result as
+     * "flags unknown" (`null`). For terminals that falls back to the self-describing
+     * proxy (`terminal` missing from `/backends`); for scheduling there is no proxy,
+     * so an unknown result simply hides the section. Any failure is safe.
      */
-    private suspend fun detectTerminalSessions(t: WardenTransport): Boolean = try {
-        val caps = t.api.capabilities()
-        if (caps.isSuccessful) {
-            caps.body()?.capabilities?.contains(Capability.TERMINAL_SESSIONS) == true
-        } else {
-            terminalAbsentFromBackends(t)
+    private suspend fun detectCapabilities(t: WardenTransport?) {
+        if (t == null) {
+            _terminalSessions.value = false
+            _scheduledAgents.value = false
+            return
         }
-    } catch (e: IOException) {
-        false
+        val flags = capabilityFlags(t)
+        _terminalSessions.value =
+            flags?.contains(Capability.TERMINAL_SESSIONS) ?: terminalAbsentFromBackends(t)
+        _scheduledAgents.value = flags?.contains(Capability.SCHEDULED_AGENTS) == true
+    }
+
+    /**
+     * The daemon's advertised capability flags, or `null` when they can't be read
+     * — an older daemon's 200-HTML shell (JSON parse error), a 404, or a network
+     * failure. Callers treat `null` as "unknown" and fall back per capability.
+     */
+    private suspend fun capabilityFlags(t: WardenTransport): Set<String>? = try {
+        val resp = t.api.capabilities()
+        if (resp.isSuccessful) resp.body()?.capabilities?.toSet() else null
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        null
     }
 
     /** Fallback signal: a successful `/backends` that no longer lists `terminal`. */
@@ -404,6 +432,41 @@ class WardenRepository(val store: ConnectionStore) {
     /** Delete a pipeline record (409 while any job is live — cancel first). */
     suspend fun deletePipeline(id: String): Result<Unit> = pipelineAction { it.api.deletePipeline(id) }
 
+    /**
+     * One-shot list of the active host's schedules for the Scheduled section.
+     * Distinguishes the daemon's **403** (scheduler configured off) from other
+     * failures so the UI can show a precise "scheduling disabled" state rather than
+     * a generic error. Only called on hosts that advertise [scheduledAgents].
+     */
+    suspend fun listSchedules(): SchedulesResult {
+        val c = client ?: return SchedulesResult.Failed("No active connection")
+        return try {
+            val resp = c.api.listSchedules()
+            when {
+                resp.isSuccessful -> SchedulesResult.Ok(resp.body()?.schedules ?: emptyList())
+                resp.code() == 403 -> SchedulesResult.Disabled
+                else -> SchedulesResult.Failed("HTTP ${resp.code()}")
+            }
+        } catch (e: IOException) {
+            SchedulesResult.Failed(e.message ?: "Network error")
+        }
+    }
+
+    /**
+     * Enables or disables a schedule (both endpoints are idempotent). Toggling off
+     * keeps the definition — it just stops firing until re-enabled.
+     */
+    suspend fun setScheduleEnabled(id: String, enabled: Boolean): Result<Unit> {
+        val c = client ?: return Result.failure(IllegalStateException("no active connection"))
+        return try {
+            val resp = if (enabled) c.api.enableSchedule(id) else c.api.disableSchedule(id)
+            if (resp.isSuccessful) Result.success(Unit)
+            else Result.failure(HttpStatusException(resp.code()))
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
+    }
+
     /** Lists immediate subdirectories of [path] (null/blank = home) for the browser. */
     suspend fun listDirs(path: String?): Result<DirListing> {
         val c = client ?: return Result.failure(IllegalStateException("no active connection"))
@@ -526,6 +589,18 @@ class WardenRepository(val store: ConnectionStore) {
     private data class ErrorBody(val error: String = "")
 
     class HttpStatusException(val code: Int) : Exception("HTTP $code")
+}
+
+/** Outcome of listing schedules (see [WardenRepository.listSchedules]). */
+sealed interface SchedulesResult {
+    /** 200 — the current schedules (possibly empty). */
+    data class Ok(val schedules: List<Schedule>) : SchedulesResult
+
+    /** 403 — the daemon's scheduler is configured off. */
+    data object Disabled : SchedulesResult
+
+    /** Network / unexpected HTTP — [message] is user-facing. */
+    data class Failed(val message: String) : SchedulesResult
 }
 
 /** Result of a spawn attempt (see [WardenRepository.spawn]). */

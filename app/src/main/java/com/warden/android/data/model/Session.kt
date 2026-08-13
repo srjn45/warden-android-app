@@ -52,12 +52,27 @@ data class Session(
      * marks a free-form shell pane. See [Kind] and [isTerminal].
      */
     val kind: String = "",
+    /**
+     * When this session was spawned by a **schedule**, the id of that schedule
+     * (and [scheduleName] its label). The exact analogue of [pipelineId] for
+     * scheduled runs — absent (`omitempty`) on manually-spawned sessions. Lets the
+     * app keep scheduled agents in their own section and drill into a live run's
+     * PTY off the shared fleet stream. See [isScheduled].
+     */
+    @SerialName("schedule_id") val scheduleId: String = "",
+    @SerialName("schedule_name") val scheduleName: String = "",
 ) {
     /** Human-facing title for a list row: the agent name, falling back to id. */
     val displayName: String get() = name.ifBlank { id }
 
     /** True when this session is a plain terminal pane rather than an AI agent. */
     val isTerminal: Boolean get() = kind == Kind.TERMINAL
+
+    /**
+     * True when this session was spawned by a schedule. Such runs live in the
+     * Scheduled section and are filtered out of the normal Agents list.
+     */
+    val isScheduled: Boolean get() = scheduleId.isNotBlank()
 }
 
 /** Known [Session.kind] values. Empty/absent == [AGENT] (back-compat). */

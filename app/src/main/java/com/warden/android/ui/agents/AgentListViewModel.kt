@@ -56,9 +56,9 @@ class AgentListViewModel(
 
     /**
      * Collects the repository's single shared fleet stream and projects the AGENT
-     * sessions (terminals are filtered out — they live on their own screen). One
-     * shared socket backs both the Agents and Terminals screens, so this is a
-     * plain collector rather than a per-VM stream.
+     * sessions — terminals and schedule-fired runs are filtered out, as each lives
+     * on its own screen. One shared socket backs the Agents, Terminals, and
+     * Scheduled screens, so this is a plain collector rather than a per-VM stream.
      *
      * Agents are shown in the daemon's own order — we deliberately do NOT sort.
      * Ordering by status/updated_at made rows jump on every agent action, which
@@ -69,7 +69,7 @@ class AgentListViewModel(
             repo.fleet.collect { fleet ->
                 _state.update {
                     it.copy(
-                        agents = fleet.sessions.filterNot { s -> s.isTerminal },
+                        agents = fleet.sessions.filterNot { s -> s.isTerminal || s.isScheduled },
                         stream = fleet.phase.toStreamStatus(),
                         error = fleet.error,
                     )
@@ -98,7 +98,7 @@ class AgentListViewModel(
                 .onSuccess { list ->
                     _state.update {
                         it.copy(
-                            agents = list.filterNot { s -> s.isTerminal },
+                            agents = list.filterNot { s -> s.isTerminal || s.isScheduled },
                             refreshing = false,
                             error = null,
                         )

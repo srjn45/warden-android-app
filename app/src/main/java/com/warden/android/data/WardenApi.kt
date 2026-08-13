@@ -10,6 +10,7 @@ import com.warden.android.data.model.Pipeline
 import com.warden.android.data.model.PipelineList
 import com.warden.android.data.model.RemoveWorktreeRequest
 import com.warden.android.data.model.RolesResponse
+import com.warden.android.data.model.ScheduleList
 import com.warden.android.data.model.Session
 import com.warden.android.data.model.SessionList
 import com.warden.android.data.model.SpawnRequest
@@ -62,6 +63,23 @@ interface WardenApi {
     /** Immediate subdirectories of [path] (empty = home) for the dir browser. */
     @GET("api/v1/fs/dirs")
     suspend fun listDirs(@Query("path") path: String?): Response<DirListing>
+
+    /**
+     * Saved schedules (recurring cron + one-shot `at`) that fire agents/pipelines,
+     * for the Scheduled section. 200 + `{schedules:[…]}`; **403** when the daemon's
+     * scheduler is configured off (the caller shows a "scheduling disabled" state).
+     * Gated behind the `scheduled-agents` capability.
+     */
+    @GET("api/v1/schedules")
+    suspend fun listSchedules(): Response<ScheduleList>
+
+    /** Enable a schedule so it fires again (idempotent). 200 / 404 / 403. */
+    @POST("api/v1/schedules/{id}/enable")
+    suspend fun enableSchedule(@Path("id") id: String): Response<StatusResponse>
+
+    /** Disable a schedule so it stops firing, keeping the definition (idempotent). 200 / 404 / 403. */
+    @POST("api/v1/schedules/{id}/disable")
+    suspend fun disableSchedule(@Path("id") id: String): Response<StatusResponse>
 
     /** Pipeline DAG snapshot for the pipelines list. 200 + `{pipelines:[…]}`. */
     @GET("api/v1/pipelines")
